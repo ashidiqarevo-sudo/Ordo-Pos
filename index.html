@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="id" class="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ordo Pos</title>
+    <meta name="description" content="Kelola servis HP tanpa ribet dengan Ordo Pos. Catat servis masuk, pantau proses pengerjaan, nota WhatsApp, dan pembukuan kas konter." />
+    <meta property="og:title" content="Ordo Pos" />
+    <meta property="og:description" content="Kelola servis HP tanpa ribet dengan Ordo Pos. Catat servis masuk, pantau proses pengerjaan, nota WhatsApp, dan pembukuan kas konter." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script>
+      (function() {
+        try {
+          const theme = localStorage.getItem('ordo_servis_theme_v4');
+          if (theme === 'dark') {
+            document.documentElement.classList.remove('light');
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.add('light');
+            document.documentElement.classList.remove('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body class="bg-slate-50 dark:bg-black text-slate-900 dark:text-zinc-100 font-sans selection:bg-emerald-500 selection:text-black antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

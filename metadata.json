@@ -1,0 +1,6 @@
+{
+  "name": "Ordo Pos",
+  "description": "Kelola servis HP tanpa ribet dengan Ordo Pos. Catat servis masuk, pantau proses pengerjaan, nota WhatsApp, dan pembukuan kas konter.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,250 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+:root {
+  color-scheme: dark;
+  --color-zinc-950: #09090b;
+  --color-zinc-900: #18181b;
+  --color-zinc-800: #27272a;
+  --color-zinc-700: #3f3f46;
+  --color-zinc-600: #52525b;
+  --color-zinc-500: #71717a;
+  --color-zinc-400: #a1a1aa;
+  --color-zinc-300: #d4d4d8;
+  --color-zinc-200: #e4e4e7;
+  --color-zinc-100: #f4f4f5;
+}
+
+html.light {
+  color-scheme: light;
+  --color-zinc-950: #f8fafc;
+  --color-zinc-900: #ffffff;
+  --color-zinc-800: #e2e8f0;
+  --color-zinc-700: #cbd5e1;
+  --color-zinc-600: #94a3b8;
+  --color-zinc-500: #64748b;
+  --color-zinc-400: #475569;
+  --color-zinc-300: #334155;
+  --color-zinc-200: #1e293b;
+  --color-zinc-100: #0f172a;
+
+  --color-emerald-400: #059669;
+  --color-blue-400: #2563eb;
+  --color-amber-400: #d97706;
+
+  --color-emerald-200: #064e3b;
+  --color-emerald-300: #065f46;
+  --color-rose-200: #881337;
+  --color-rose-300: #9f1239;
+  --color-amber-200: #78350f;
+  --color-amber-300: #92400e;
+}
+
+html.light .text-emerald-200,
+html.light .text-emerald-300 {
+  color: #064e3b !important;
+}
+
+html.light .text-rose-200,
+html.light .text-rose-300 {
+  color: #881337 !important;
+}
+
+html.light .text-amber-200,
+html.light .text-amber-300 {
+  color: #78350f !important;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  background-color: #050505;
+  color: #f4f4f5;
+}
+
+html.light body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+html.light .bg-black {
+  background-color: #f8fafc !important;
+}
+
+html.light .bg-zinc-950 {
+  background-color: #f1f5f9 !important;
+}
+
+html.light .bg-zinc-900 {
+  background-color: #ffffff !important;
+}
+
+html.light .border-zinc-800,
+html.light .border-zinc-800\/80,
+html.light .border-zinc-700 {
+  border-color: #e2e8f0 !important;
+}
+
+html.light .divide-zinc-800\/60 > :not([hidden]) ~ :not([hidden]),
+html.light .divide-zinc-800\/50 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #f1f5f9 !important;
+}
+
+html.light .shadow-lg {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05) !important;
+}
+
+html.light .focus\:bg-black:focus {
+  background-color: #ffffff !important;
+}
+
+html.light .text-white {
+  color: #0f172a !important;
+}
+
+/* Fix hover states in light mode so text and background never clash as white-on-white */
+html.light .hover\:text-white:hover {
+  color: #0f172a !important;
+}
+
+html.light .group:hover .group-hover\:text-white {
+  color: #0f172a !important;
+}
+
+html.light .group:hover .group-hover\:text-zinc-300,
+html.light .group:hover .group-hover\:text-zinc-200,
+html.light .group:hover .group-hover\:text-zinc-100 {
+  color: #0f172a !important;
+}
+
+html.light .hover\:bg-zinc-900:hover,
+html.light .hover\:bg-zinc-900\/90:hover,
+html.light .hover\:bg-zinc-900\/80:hover {
+  background-color: #e2e8f0 !important;
+}
+
+html.light .hover\:bg-zinc-800:hover,
+html.light .hover\:bg-zinc-800\/80:hover,
+html.light .hover\:bg-zinc-800\/60:hover,
+html.light .hover\:bg-zinc-800\/50:hover,
+html.light .hover\:bg-zinc-800\/40:hover,
+html.light .hover\:bg-zinc-800\/30:hover {
+  background-color: #e2e8f0 !important;
+}
+
+html.light .hover\:bg-zinc-700:hover {
+  background-color: #cbd5e1 !important;
+}
+
+html.light input,
+html.light select,
+html.light textarea {
+  color: #0f172a !important;
+}
+
+html.light select option {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+
+html.light input::placeholder,
+html.light textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Maintain white text where background is dark or primary */
+html.light .bg-emerald-500 .text-black,
+html.light button.bg-emerald-500,
+html.light button.bg-emerald-600 {
+  color: #000000 !important;
+}
+
+html.light #printableReceipt .bg-black {
+  background-color: #000000 !important;
+}
+
+html.light #printableReceipt .text-white,
+html.light #printableReceipt .bg-black .text-white {
+  color: #ffffff !important;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #09090b;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #10b981;
+}
+
+html.light ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+html.light ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: #10b981;
+}
+
+@media print {
+  @page {
+    margin: 1cm;
+    size: auto;
+  }
+  html, body {
+    height: auto !important;
+    overflow: visible !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+  aside, header, #toastContainer, .no-print {
+    display: none !important;
+  }
+  
+  /* When printing in receipt modal */
+  #printableReceipt {
+    display: block !important;
+    position: static !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0.5cm !important;
+    color: #000000 !important;
+    background: #ffffff !important;
+  }
+
+  /* When printing accounting / general views */
+  body:not(:has(#printableReceipt)) * {
+    color: #000000 !important;
+    background-color: transparent !important;
+    border-color: #cbd5e1 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  body:not(:has(#printableReceipt)) section {
+    background-color: #ffffff !important;
+  }
+
+  body:not(:has(#printableReceipt)) table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  body:not(:has(#printableReceipt)) th, 
+  body:not(:has(#printableReceipt)) td {
+    border: 1px solid #e2e8f0 !important;
+    padding: 6px 8px !important;
+    color: #000000 !important;
+  }
+}
