@@ -124,7 +124,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
         {/* Printable Receipt Body - Modern Compact Flow */}
         <div
           id="printableReceipt"
-          className="overflow-y-auto p-4 sm:p-5 flex-1 space-y-2.5 text-xs bg-white text-black"
+          className="overflow-y-auto p-4 sm:p-5 flex-1 space-y-2.5 text-xs bg-white text-black print:bg-white print:text-black"
         >
           {/* Store Branding */}
           <div className="text-center pb-2 border-b border-black">

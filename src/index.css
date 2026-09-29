@@ -217,24 +217,25 @@ html.light ::-webkit-scrollbar-thumb:hover {
     margin: 2mm 1mm;
   }
 
+  html, body, #printableReceipt {
+    background-color: white !important;
+    color: black !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
   html, body {
     height: auto !important;
     overflow: visible !important;
-    background-color: #ffffff !important;
-    color: #000000 !important;
     font-size: 9pt !important;
     line-height: 1.2 !important;
   }
 
   aside, header, #toastContainer, .no-print {
     display: none !important;
-  }
-
-  /* Paksa SEMUA teks menjadi hitam pekat saat dicetak */
-  * {
-    color: #000000 !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
   }
 
   /* Ketika mencetak dalam modal receipt */
@@ -244,16 +245,9 @@ html.light ::-webkit-scrollbar-thumb:hover {
     height: auto !important;
     overflow: visible !important;
     padding: 1mm !important;
-    color: #000000 !important;
-    background: #ffffff !important;
     width: 54mm !important;
     font-size: 8pt !important;
     line-height: 1.15 !important;
-  }
-
-  #printableReceipt,
-  #printableReceipt * {
-    background-color: transparent !important;
   }
 
   /* Kompakkan semua elemen di dalam nota */
