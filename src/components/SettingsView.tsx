@@ -19,8 +19,10 @@ import {
   AlertTriangle,
   CloudUpload,
   RefreshCw,
+  Lock,
 } from 'lucide-react';
 import { LogoCropperModal } from './modals/LogoCropperModal';
+import { supabase } from '../lib/supabase';
 
 interface SettingsViewProps {
   settings: StoreSettings;
@@ -65,7 +67,48 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [resetModalOpen, setResetModalOpen] = useState(false);
   const [countdown, setCountdown] = useState(5);
   const [isLocalSyncing, setIsLocalSyncing] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = newPassword.trim();
+    if (!trimmed) {
+      setPasswordError('Silakan masukkan kata sandi baru.');
+      setPasswordSuccess(null);
+      return;
+    }
+    if (trimmed.length < 6) {
+      setPasswordError('Kata sandi baru minimal 6 karakter.');
+      setPasswordSuccess(null);
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    setPasswordError(null);
+    setPasswordSuccess(null);
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: trimmed,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setPasswordSuccess('Kata sandi berhasil diperbarui!');
+      setNewPassword('');
+    } catch (err: any) {
+      console.error('[SettingsView] Error updating password:', err);
+      setPasswordError(err?.message || 'Gagal mengubah kata sandi. Silakan coba lagi.');
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
 
   const handleTriggerSync = async () => {
     if (!onSyncOfflineData) return;
@@ -843,7 +886,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-lg bg-zinc-950 border border-zinc-800/80">
+        <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800/80">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <span className="text-sm font-bold text-white">
@@ -857,8 +900,63 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               {currentUser?.email || formData.storePhone || 'Akun Administrator Konter'}
             </p>
           </div>
+        </div>
 
-          {onLogout && (
+        {/* Blok Ganti Kata Sandi */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4 text-emerald-400" />
+            <h4 className="text-xs font-bold text-white">Ganti Kata Sandi</h4>
+          </div>
+          <form onSubmit={handleUpdatePassword} className="space-y-2.5">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => {
+                  setNewPassword(e.target.value);
+                  if (passwordError) setPasswordError(null);
+                  if (passwordSuccess) setPasswordSuccess(null);
+                }}
+                placeholder="Ketik kata sandi baru..."
+                disabled={isUpdatingPassword}
+                className="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:bg-black focus:border-emerald-500 focus:outline-none transition-colors"
+              />
+              <button
+                type="submit"
+                disabled={isUpdatingPassword || !newPassword.trim()}
+                className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-black font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95 shrink-0"
+              >
+                {isUpdatingPassword ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Menyimpan...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Simpan Sandi Baru</span>
+                  </>
+                )}
+              </button>
+            </div>
+            {passwordSuccess && (
+              <p className="text-[11px] text-emerald-400 font-medium flex items-center gap-1.5 animate-in fade-in duration-150">
+                <Check className="w-3.5 h-3.5 shrink-0" />
+                <span>{passwordSuccess}</span>
+              </p>
+            )}
+            {passwordError && (
+              <p className="text-[11px] text-rose-400 font-medium flex items-center gap-1.5 animate-in fade-in duration-150">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                <span>{passwordError}</span>
+              </p>
+            )}
+          </form>
+        </div>
+
+        {onLogout && (
+          <div className="flex justify-end pt-2 border-t border-zinc-800/60">
             <button
               type="button"
               onClick={onLogout}
@@ -867,8 +965,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <LogOut className="w-4 h-4" />
               <span>Keluar dari Akun (Logout)</span>
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Interactive Modal Preview & Adjust Logo */}
