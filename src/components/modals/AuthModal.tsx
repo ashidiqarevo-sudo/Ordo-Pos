@@ -36,8 +36,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (isOpen) {
       setMode(initialMode);
       setErrorMsg('');
-      if (defaultEmail) {
-        setEmail(defaultEmail);
+      try {
+        const savedEmail = localStorage.getItem('saved_email');
+        const savedPassword = localStorage.getItem('saved_password');
+        if (savedEmail || savedPassword) {
+          if (savedEmail) setEmail(savedEmail);
+          if (savedPassword) setPassword(savedPassword);
+          setRememberMe(true);
+        } else if (defaultEmail) {
+          setEmail(defaultEmail);
+        }
+      } catch {
+        if (defaultEmail) {
+          setEmail(defaultEmail);
+        }
       }
     }
   }, [isOpen, initialMode, defaultEmail]);
@@ -48,6 +60,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [phone, setPhone] = useState('');
   const [storeName, setStoreName] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
 
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -68,6 +81,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       if (password.length < 5) {
         setErrorMsg('Kata sandi minimal 5 karakter.');
         return;
+      }
+
+      if (rememberMe) {
+        try {
+          localStorage.setItem('saved_email', cleanEmail);
+          localStorage.setItem('saved_password', password);
+        } catch {
+          // ignore
+        }
+      } else {
+        try {
+          localStorage.removeItem('saved_email');
+          localStorage.removeItem('saved_password');
+        } catch {
+          // ignore
+        }
       }
 
       setIsLoading(true);
@@ -276,6 +305,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Ingatkan Saya Checkbox (Remember Me) */}
+          {mode === 'login' && (
+            <div className="flex items-center gap-2 pt-0.5">
+              <input
+                id="remember-me"
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-300 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 accent-emerald-500 cursor-pointer focus:ring-emerald-500 focus:ring-1"
+              />
+              <label
+                htmlFor="remember-me"
+                className="text-xs text-slate-600 dark:text-zinc-400 select-none cursor-pointer hover:text-slate-800 dark:hover:text-zinc-300 font-medium"
+              >
+                Ingatkan saya
+              </label>
+            </div>
+          )}
 
           {/* Submit Button */}
           <button
