@@ -911,40 +911,45 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <Lock className="w-4 h-4 text-emerald-400" />
             <h4 className="text-xs font-bold text-white">Ganti Kata Sandi</h4>
           </div>
-          <form onSubmit={handleUpdatePassword} className="space-y-2.5">
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-              <div className="relative flex-1">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={newPassword}
-                  onChange={(e) => {
-                    setNewPassword(e.target.value);
-                    if (passwordError) setPasswordError(null);
-                    if (passwordSuccess) setPasswordSuccess(null);
-                  }}
-                  placeholder="Ketik kata sandi baru..."
-                  disabled={isUpdatingPassword}
-                  className="w-full bg-zinc-950 border border-zinc-700 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-white placeholder-zinc-500 focus:bg-black focus:border-emerald-500 focus:outline-none transition-colors"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((prev) => !prev)}
-                  disabled={isUpdatingPassword}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white transition-colors cursor-pointer p-0.5"
-                  title={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
-                  aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
-                >
-                  {showPassword ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
-                </button>
+          <form onSubmit={handleUpdatePassword} className="space-y-2">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-2.5">
+              <div className="flex-1 space-y-1.5">
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => {
+                      setNewPassword(e.target.value);
+                      if (passwordError) setPasswordError(null);
+                      if (passwordSuccess) setPasswordSuccess(null);
+                    }}
+                    placeholder="Ketik kata sandi baru..."
+                    disabled={isUpdatingPassword}
+                    className="w-full bg-zinc-950 border border-zinc-700 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-white placeholder-zinc-500 focus:bg-black focus:border-emerald-500 focus:outline-none transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    disabled={isUpdatingPassword}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white transition-colors cursor-pointer p-0.5"
+                    title={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
+                    aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-zinc-400 leading-tight">
+                  Gunakan minimal 6 karakter kombinasi huruf dan angka.
+                </p>
               </div>
               <button
                 type="submit"
                 disabled={isUpdatingPassword || !newPassword.trim()}
-                className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-black font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95 shrink-0"
+                className="h-[38px] px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-black font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95 shrink-0 sm:self-start"
               >
                 {isUpdatingPassword ? (
                   <>
