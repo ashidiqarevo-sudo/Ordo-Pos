@@ -910,8 +910,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <p className="text-sm text-zinc-300 font-medium break-all">
                   {currentUser?.email || formData.storePhone || 'Akun Administrator Konter'}
                 </p>
-                <p className="text-xs text-zinc-400 font-mono truncate" title={`ID: ${currentUser?.id || 'auth.uid.active'}`}>
-                  ID: {currentUser?.id || 'auth.uid.active'}
+                <p className="text-xs text-zinc-400 font-mono truncate">
+                  {currentUser?.email
+                    ? `@${currentUser.email.split('@')[0]}`
+                    : currentUser?.storeUsername
+                    ? `@${currentUser.storeUsername}`
+                    : '@ondo-phone'}
                 </p>
               </div>
             </div>
@@ -937,7 +941,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     }}
                     placeholder="Ketik kata sandi baru..."
                     disabled={isUpdatingPassword}
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 pr-10 text-white text-sm focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 pr-10 text-sm font-medium text-zinc-300 placeholder:text-zinc-500 placeholder:font-normal focus:text-white focus:outline-none focus:border-emerald-500"
                   />
                   <button
                     type="button"
@@ -953,7 +957,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   type="button"
                   onClick={handleUpdatePassword}
                   disabled={isUpdatingPassword}
-                  className="h-[38px] px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium flex items-center justify-center gap-2 shrink-0 transition-colors disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                  className="h-[38px] px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold flex items-center justify-center gap-2 shrink-0 transition-colors disabled:opacity-50 cursor-pointer whitespace-nowrap"
                 >
                   <Save size={16} />
                   {isUpdatingPassword ? "Menyimpan..." : "Simpan Sandi Baru"}
