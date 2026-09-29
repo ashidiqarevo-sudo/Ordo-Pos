@@ -109,20 +109,17 @@ export default function App() {
     );
   };
 
-  // Local storage state with fallback and demo version synchronization
+  // Local storage state
+  // CATATAN: Tidak ada seed/dummy data otomatis. Aplikasi mulai kosong jika localStorage kosong.
   const [services, setServices] = useState<ServiceItem[]>(() => {
     try {
-      const demoSyncKey = 'ordo_demo_sync_v5';
-      const isSynced = localStorage.getItem(demoSyncKey);
-      if (!isSynced) {
-        localStorage.setItem(demoSyncKey, 'true');
-        localStorage.setItem(STORAGE_KEY_SERVICES, JSON.stringify(INITIAL_SERVICES));
-        return INITIAL_SERVICES;
-      }
+      // Bersihkan kunci demo sync lama jika masih ada (mencegah re-inject data dummy)
+      localStorage.removeItem('ordo_demo_sync_v5');
+
       const saved = localStorage.getItem(STORAGE_KEY_SERVICES);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           // Auto-migrate legacy ORD-00xxx format to clean OR-YY-xxxxx format
           return parsed.map((item: ServiceItem) => {
             if (item.ticketNo && item.ticketNo.startsWith('ORD-')) {
@@ -140,7 +137,8 @@ export default function App() {
     } catch {
       // ignore
     }
-    return INITIAL_SERVICES;
+    // Default: array kosong — BUKAN dummy data
+    return [];
   });
 
   const [storeSettings, setStoreSettings] = useState<StoreSettings>(() => {
@@ -165,35 +163,8 @@ export default function App() {
     } catch {
       // ignore
     }
-    return [
-      {
-        id: 'CASH-001',
-        date: '2026-09-14',
-        type: 'IN',
-        category: 'Penjualan Aksesoris',
-        amount: 150000,
-        notes: 'Jual tempered glass 3 pcs + kabel data Type-C',
-        createdAt: '2026-09-14 11:20',
-      },
-      {
-        id: 'CASH-002',
-        date: '2026-09-13',
-        type: 'OUT',
-        category: 'Beli Alat / Solder / Flux',
-        amount: 120000,
-        notes: 'Beli mata solder mechanic + timah gulung besar',
-        createdAt: '2026-09-13 16:45',
-      },
-      {
-        id: 'CASH-003',
-        date: '2026-09-12',
-        type: 'OUT',
-        category: 'Operasional & Listrik / Pulsa',
-        amount: 100000,
-        notes: 'Token listrik konter bulan September',
-        createdAt: '2026-09-12 09:10',
-      },
-    ];
+    // Default: array kosong — BUKAN dummy data
+    return [];
   });
 
   // Persist to localStorage
@@ -297,22 +268,26 @@ export default function App() {
                   storePhone: authUser.phone || prev.storePhone,
                 }));
 
-                // Load tiket servis dari Supabase untuk toko ini
+                // Load tiket servis dari Supabase — SELALU override state (termasuk jika kosong)
+                // Ini mencegah data lama di localStorage muncul lagi setelah data Supabase dihapus
                 if (authUser.storeId) {
                   try {
                     const dbTickets = await fetchServiceTickets(authUser.storeId);
-                    if (isMounted && dbTickets && dbTickets.length > 0) {
+                    if (isMounted && Array.isArray(dbTickets)) {
                       setServices(dbTickets);
+                      // Sinkronkan ke localStorage agar konsisten
+                      try { localStorage.setItem(STORAGE_KEY_SERVICES, JSON.stringify(dbTickets)); } catch { /* ignore */ }
                     }
                   } catch (ticketErr) {
                     console.error('[App] Gagal memuat tiket servis toko:', ticketErr);
                   }
 
-                  // Load catatan kas dari Supabase untuk toko ini
+                  // Load catatan kas dari Supabase — SELALU override state
                   try {
                     const dbCashEntries = await fetchCashEntries(authUser.storeId);
-                    if (isMounted && dbCashEntries && dbCashEntries.length > 0) {
+                    if (isMounted && Array.isArray(dbCashEntries)) {
                       setCashEntries(dbCashEntries);
+                      try { localStorage.setItem(STORAGE_KEY_CASH_ENTRIES, JSON.stringify(dbCashEntries)); } catch { /* ignore */ }
                     }
                   } catch (cashErr) {
                     console.error('[App] Gagal memuat catatan kas toko:', cashErr);
@@ -475,16 +450,18 @@ export default function App() {
       storePhone: user.phone || prev.storePhone,
     }));
 
-    // Muat tiket servis dan catatan kas dari database jika bukan pendaftaran baru
+    // Muat tiket servis dan catatan kas dari database — SELALU override state
     if (user.storeId && !isNewRegistration) {
       fetchServiceTickets(user.storeId).then((dbTickets) => {
-        if (dbTickets && dbTickets.length > 0) {
+        if (Array.isArray(dbTickets)) {
           setServices(dbTickets);
+          try { localStorage.setItem(STORAGE_KEY_SERVICES, JSON.stringify(dbTickets)); } catch { /* ignore */ }
         }
       });
       fetchCashEntries(user.storeId).then((dbCash) => {
-        if (dbCash && dbCash.length > 0) {
+        if (Array.isArray(dbCash)) {
           setCashEntries(dbCash);
+          try { localStorage.setItem(STORAGE_KEY_CASH_ENTRIES, JSON.stringify(dbCash)); } catch { /* ignore */ }
         }
       });
     }
@@ -1189,42 +1166,54 @@ export default function App() {
   };
 
   const handleResetDatabase = async () => {
-    // 1. Hapus state lokal (tiket & kas saja — settings & pelanggan TETAP)
+    // 1. Reset state React segera agar UI langsung responsif
     setServices([]);
     setCashEntries([]);
 
-    // 2. Bersihkan localStorage — tiket, kas, dan semua kunci demo/ghost data
-    const ghostKeys = [
+    // 2. Bersihkan localStorage secara agresif \u2014 semua kunci yang mungkin berisi data
+    const keysToWipe = [
       STORAGE_KEY_SERVICES,
       STORAGE_KEY_CASH_ENTRIES,
-      'ordo_demo_sync_v5',          // kunci sinkronisasi data dummy
-      'ordo_servis_services_v5',    // versi lama
+      'ordo_demo_sync_v5',           // kunci seed dummy lama
+      'ordo_servis_services_v5',
       'ordo_servis_services_v4',
       'ordo_servis_services_v3',
       'ordo_servis_cash_entries_v1',
     ];
-    ghostKeys.forEach((key) => {
+    keysToWipe.forEach((key) => {
       try { localStorage.removeItem(key); } catch { /* ignore */ }
     });
-    // Set ulang STORAGE_KEY_SERVICES dan CASH_ENTRIES menjadi array kosong
+    // Tulis array kosong secara eksplisit agar re-read dari localStorage tetap kosong
     try {
       localStorage.setItem(STORAGE_KEY_SERVICES, JSON.stringify([]));
       localStorage.setItem(STORAGE_KEY_CASH_ENTRIES, JSON.stringify([]));
     } catch { /* ignore */ }
 
-    // 3. Hapus dari Supabase: hanya service_tickets dan cash_entries toko ini
+    // 3. Hapus dari Supabase: tabel 'services' dan 'cash_entries' milik toko ini
+    // Nama tabel sesuai serviceTicketService.ts (.from('services')) dan cashService.ts (.from('cash_entries'))
     if (currentUser?.storeId) {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const sb = supabase as any;
-        await sb.from('service_tickets').delete().eq('store_id', currentUser.storeId);
-        await sb.from('cash_entries').delete().eq('store_id', currentUser.storeId);
+        const storeId = currentUser.storeId;
+        // Hapus tiket servis (tabel: services)
+        const { error: svcErr } = await supabase
+          .from('services' as any)
+          .delete()
+          .eq('store_id', storeId);
+        if (svcErr) console.error('[App] Hapus services error:', svcErr);
+
+        // Hapus catatan kas (tabel: cash_entries)
+        const { error: cashErr } = await supabase
+          .from('cash_entries' as any)
+          .delete()
+          .eq('store_id', storeId);
+        if (cashErr) console.error('[App] Hapus cash_entries error:', cashErr);
+
       } catch (err) {
         console.error('[App] handleResetDatabase Supabase error:', err);
       }
     }
 
-    addToast('Data tiket & kas berhasil dihapus. Pengaturan toko tetap aman!', 'info');
+    addToast('Data tiket & kas berhasil dihapus. Pengaturan toko & pelanggan tetap aman!', 'info');
   };
 
   const handleLoadDemoData = () => {
