@@ -45,6 +45,11 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     : Number(service.finalCost) || Number(service.estimatedCost) || 0;
   const dp = Number(service.dp) || 0;
   const balance = Math.max(0, totalCost - dp);
+  const techName =
+    service.technicianName ||
+    (service as any).technician_name ||
+    storeSettings.ownerName ||
+    'Teknisi';
 
   // Calculate warranty expiry date if applicable
   const getWarrantyExpiry = () => {
@@ -116,42 +121,43 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           </button>
         </div>
 
-        {/* Printable Receipt Body */}
+        {/* Printable Receipt Body - Modern Compact Flow */}
         <div
           id="printableReceipt"
-          className="overflow-y-auto p-6 flex-1 space-y-4 text-xs bg-white text-black"
+          className="overflow-y-auto p-4 sm:p-5 flex-1 space-y-2.5 text-xs bg-white text-black"
         >
           {/* Store Branding */}
-          <div className="text-center pb-3 border-b-2 border-black">
+          <div className="text-center pb-2 border-b border-black">
             {storeSettings.logoUrl && (
               <div className="flex justify-center mb-1">
-                <div className="w-32 h-32 rounded-full overflow-hidden flex items-center justify-center">
+                <div className="w-12 h-12 rounded-lg overflow-hidden flex items-center justify-center bg-black">
                   <img
                     src={storeSettings.logoUrl}
                     alt={storeSettings.storeName || 'Logo Toko'}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover bg-black"
                   />
                 </div>
               </div>
             )}
-            <h2 className="text-xl font-black tracking-tight text-black uppercase mt-1">
+            <h2 className="text-base font-black tracking-tight text-black uppercase">
               {storeSettings.storeName || 'ORDO SERVIS HP'}
             </h2>
-            <p className="text-xs text-neutral-600 font-medium mt-0.5">
-              {storeSettings.storeTagline || 'Pusat Servis & Ganti Sparepart HP'}
-            </p>
-            <div className="pt-1 text-[11px] text-neutral-700 space-y-0.5">
-              <p>{storeSettings.storeAddress}</p>
+            {storeSettings.storeTagline && (
+              <p className="text-[11px] text-neutral-600 font-medium">
+                {storeSettings.storeTagline}
+              </p>
+            )}
+            <div className="text-[10px] text-neutral-700 space-y-0.5 mt-0.5">
+              {storeSettings.storeAddress && <p>{storeSettings.storeAddress}</p>}
               <p className="font-bold text-black">
-                WhatsApp Konter:{' '}
-                <span className="font-mono">{storeSettings.storePhone}</span>
+                WhatsApp: <span className="font-mono">{storeSettings.storePhone}</span>
               </p>
             </div>
           </div>
 
-          {/* Receipt Document Title */}
+          {/* Receipt Document Title Banner */}
           <div
-            className={`text-center py-1.5 rounded-md font-black tracking-wider uppercase text-xs ${
+            className={`text-center py-1 rounded font-black tracking-wider uppercase text-[11px] ${
               isBatal ? 'bg-neutral-900 text-white' : 'bg-black text-white'
             }`}
           >
@@ -162,155 +168,97 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               : 'NOTA PENGAMBILAN & KARTU GARANSI'}
           </div>
 
-          {/* Ticket Information Header */}
-          <div className="grid grid-cols-2 gap-2 text-neutral-800 bg-neutral-100 p-3 rounded-xl border border-neutral-300">
-            <div>
-              <span className="text-neutral-500 block text-[10px] font-bold">
-                NO. NOTA:
-              </span>
-              <span className="font-mono font-black text-black text-sm">
-                {service.ticketNo}
+          {/* Ticket Metadata Flow */}
+          <div className="py-2 border-b border-dashed border-neutral-400 space-y-1 text-xs">
+            <div className="flex justify-between items-center">
+              <span className="text-neutral-600">No. Nota:</span>
+              <span className="font-mono font-black text-black text-sm">{service.ticketNo}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-neutral-600">Tanggal:</span>
+              <span className="font-mono text-black">
+                {receiptType === 'PICKUP' && service.pickedUpAt ? service.pickedUpAt : service.createdAt}
               </span>
             </div>
-            <div className="text-right">
-              <span className="text-neutral-500 block text-[10px] font-bold">
-                TANGGAL MASUK:
-              </span>
-              <span className="font-medium text-black font-mono">
-                {service.createdAt}
-              </span>
+            <div className="flex justify-between items-center">
+              <span className="text-neutral-600">Teknisi:</span>
+              <span className="font-bold text-black">{techName}</span>
             </div>
-            <div className="mt-1">
-              <span className="text-neutral-500 block text-[10px] font-bold">
-                NAMA PELANGGAN:
-              </span>
-              <span className="font-bold text-black text-xs">
+            <div className="flex justify-between items-start gap-2 pt-0.5">
+              <span className="text-neutral-600 shrink-0">Pelanggan:</span>
+              <span className="font-bold text-black text-right">
                 {service.customerName}
-              </span>
-              <span className="block text-neutral-600 font-mono text-[11px]">
-                {service.customerPhone || 'Tanpa WA'}
-              </span>
-            </div>
-            <div className="text-right mt-1">
-              <span className="text-neutral-500 block text-[10px] font-bold">
-                {isBatal
-                  ? 'STATUS / TGL. KEMBALI:'
-                  : receiptType === 'INTAKE'
-                  ? 'STATUS SERVIS:'
-                  : 'TGL. SELESAI / DIAMBIL:'}
-              </span>
-              {isBatal ? (
-                <div>
-                  <span className="inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase bg-rose-100 text-rose-800 border border-rose-300">
-                    BATAL SERVIS
+                {service.customerPhone && service.customerPhone !== 'Tanpa WA' && (
+                  <span className="font-mono font-normal text-neutral-600 block text-[11px]">
+                    {service.customerPhone}
                   </span>
-                  {service.pickedUpAt && (
-                    <span className="font-mono text-neutral-700 text-[10px] block mt-0.5">
-                      Diambil: {service.pickedUpAt}
-                    </span>
-                  )}
-                </div>
-              ) : receiptType === 'INTAKE' ? (
-                <span className="inline-block mt-0.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-neutral-200 text-black border border-neutral-300">
-                  UNIT DITERIMA
-                </span>
-              ) : (
-                <span className="font-mono font-bold text-black text-xs block mt-0.5">
-                  {service.pickedUpAt || 'Selesai & Lunas'}
-                </span>
-              )}
+                )}
+              </span>
             </div>
           </div>
 
-          {/* Device and Complaint Section */}
-          <div className="bg-white border border-neutral-300 rounded-xl p-3.5 space-y-2">
-            <div className="flex justify-between">
-              <span className="text-neutral-500">Unit HP:</span>
-              <span className="font-black text-black text-right">
-                {service.deviceModel}
-              </span>
+          {/* Device & Service Information */}
+          <div className="py-2 border-b border-dashed border-neutral-400 space-y-1.5 text-xs">
+            <div className="flex justify-between items-start gap-2">
+              <span className="text-neutral-600 shrink-0">Unit HP:</span>
+              <span className="font-black text-black text-right">{service.deviceModel}</span>
             </div>
 
-            {receiptType === 'INTAKE' && (
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Kunci Layar (Pola/PIN):</span>
-                <span className="font-mono font-bold text-black text-right">
-                  {service.screenLock || 'Tidak Ada'}
-                </span>
+            {receiptType === 'INTAKE' && service.screenLock && service.screenLock !== '-' && (
+              <div className="flex justify-between items-center gap-2">
+                <span className="text-neutral-600 shrink-0">Kunci Layar:</span>
+                <span className="font-mono font-bold text-black text-right">{service.screenLock}</span>
               </div>
             )}
 
-            <div className="flex justify-between">
-              <span className="text-neutral-500">Keluhan Kerusakan:</span>
-              <span className="font-semibold text-neutral-900 text-right max-w-[240px]">
-                {service.complaints.join(', ')}
-              </span>
+            <div className="flex justify-between items-start gap-2">
+              <span className="text-neutral-600 shrink-0">Keluhan:</span>
+              <span className="font-medium text-black text-right">{service.complaints.join(', ')}</span>
             </div>
 
             {service.diagnosis && (
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Hasil Diagnosis:</span>
-                <span className="font-bold text-neutral-900 text-right max-w-[240px]">
-                  {service.diagnosis}
-                </span>
+              <div className="flex justify-between items-start gap-2">
+                <span className="text-neutral-600 shrink-0">Diagnosis:</span>
+                <span className="font-bold text-black text-right">{service.diagnosis}</span>
+              </div>
+            )}
+
+            {service.actionTaken && (
+              <div className="flex justify-between items-start gap-2">
+                <span className="text-neutral-600 shrink-0">Tindakan:</span>
+                <span className="font-bold text-black text-right">{service.actionTaken}</span>
               </div>
             )}
 
             {isBatal && (
-              <div className="flex justify-between bg-rose-50 p-2 rounded-lg border border-rose-200">
-                <span className="text-rose-800 font-bold">Alasan Batal:</span>
-                <span className="font-bold text-rose-900 text-right max-w-[240px]">
+              <div className="flex justify-between items-start gap-2 bg-neutral-100 p-1.5 rounded border border-neutral-300">
+                <span className="font-bold text-neutral-800 shrink-0">Alasan Batal:</span>
+                <span className="font-bold text-black text-right">
                   {service.cancelReason || 'Dibatalkan oleh pelanggan/teknisi'}
                 </span>
               </div>
             )}
 
-            {service.notes && (
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Catatan Fisik:</span>
-                <span className="text-neutral-700 text-right max-w-[240px]">
-                  {service.notes}
-                </span>
+            {service.notes && service.notes !== '-' && (
+              <div className="flex justify-between items-start gap-2">
+                <span className="text-neutral-600 shrink-0">Catatan Fisik:</span>
+                <span className="text-neutral-800 text-right">{service.notes}</span>
               </div>
             )}
 
             {!isBatal && receiptType === 'PICKUP' && (
-              <>
-                <div className="flex justify-between">
-                  <span className="text-neutral-500">Metode Bayar:</span>
-                  <span className="font-bold text-black text-right">
-                    {service.paymentMethod !== '-'
-                      ? service.paymentMethod
-                      : 'Tunai'}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center bg-neutral-100 p-2 rounded-lg border border-neutral-300">
-                  <div>
-                    <span className="text-neutral-500 text-[10px] block font-bold">
-                      GARANSI RESMI TOKO:
-                    </span>
-                    <span className="font-black text-black text-xs">
-                      {service.warrantyDays ? `${service.warrantyDays} Hari` : 'Non-Garansi'}
-                    </span>
-                  </div>
-                  {Boolean(service.warrantyDays) && (
-                    <div className="text-right">
-                      <span className="text-neutral-500 text-[10px] block font-bold">
-                        BERLAKU SAMPAI:
-                      </span>
-                      <span className="font-mono font-black text-black text-xs">
-                        {getWarrantyExpiry()}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </>
+              <div className="flex justify-between items-center gap-2 pt-1 border-t border-neutral-200">
+                <span className="text-neutral-600 shrink-0">Garansi Toko:</span>
+                <span className="font-bold text-black text-right">
+                  {service.warrantyDays ? `${service.warrantyDays} Hari (s/d ${getWarrantyExpiry()})` : 'Non-Garansi'}
+                </span>
+              </div>
             )}
           </div>
 
-          {/* Financial Breakdown */}
-          <div className="space-y-1.5 pt-2 border-t border-neutral-300">
-            <div className="flex justify-between text-neutral-600">
+          {/* Financial Breakdown (Rata Kanan) */}
+          <div className="py-2 border-b border-dashed border-neutral-400 space-y-1 text-xs">
+            <div className="flex justify-between items-center text-neutral-600">
               <span>
                 {isBatal
                   ? 'Total Biaya Servis:'
@@ -318,21 +266,30 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                   ? 'Estimasi Total Biaya:'
                   : 'Total Biaya Servis:'}
               </span>
-              <span className="font-bold text-black">
-                {isBatal ? 'Rp 0 (Batal)' : formatRupiah(totalCost)}
+              <span className="font-bold font-mono text-black text-right">
+                {isBatal ? 'Rp 0' : formatRupiah(totalCost)}
               </span>
             </div>
 
             {dp > 0 && (
-              <div className="flex justify-between text-neutral-600">
-                <span>{isBatal ? 'DP Dikembalikan ke Pelanggan:' : 'DP / Uang Muka Masuk:'}</span>
-                <span className="font-bold text-black">
+              <div className="flex justify-between items-center text-neutral-600">
+                <span>{isBatal ? 'DP Dikembalikan:' : 'DP / Uang Muka Masuk:'}</span>
+                <span className="font-bold font-mono text-black text-right">
                   {isBatal ? formatRupiah(dp) : `- ${formatRupiah(dp)}`}
                 </span>
               </div>
             )}
 
-            <div className="flex justify-between text-base font-black pt-2 border-t-2 border-dashed border-neutral-400 text-black">
+            {!isBatal && receiptType === 'PICKUP' && service.paymentMethod && service.paymentMethod !== '-' && (
+              <div className="flex justify-between items-center text-neutral-600">
+                <span>Metode Pembayaran:</span>
+                <span className="font-bold text-black text-right">
+                  {service.paymentMethod}
+                </span>
+              </div>
+            )}
+
+            <div className="flex justify-between items-center pt-1.5 border-t border-black text-xs font-black text-black">
               <span>
                 {isBatal
                   ? 'Status Tagihan:'
@@ -340,7 +297,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
                   ? 'Estimasi Sisa Bayar:'
                   : 'Status Pelunasan:'}
               </span>
-              <span className="text-black text-base font-mono font-black">
+              <span className="text-sm font-mono font-black text-right text-black">
                 {isBatal
                   ? 'DIBATALKAN (Rp 0)'
                   : receiptType === 'PICKUP'
@@ -350,54 +307,56 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </div>
           </div>
 
-          {/* Specific Terms based on Receipt Type */}
+          {/* Specific Terms based on Receipt Type (Compact & Smaller Font) */}
           {isBatal ? (
-            <div className="p-3 bg-neutral-100 border border-neutral-300 rounded-xl space-y-1 text-[11px] leading-relaxed text-neutral-700">
-              <p className="font-bold text-black">Ketentuan Pengembalian Unit (Batal Servis):</p>
-              <ul className="list-disc pl-4 space-y-0.5 text-[10px] text-neutral-600">
-                <li>Unit HP telah diserahkan kembali kepada pemilik dalam kondisi apa adanya sesuai saat masuk/dibatalkan.</li>
-                <li>Tidak ada tagihan biaya perbaikan untuk servis yang dibatalkan.</li>
-                <li>Hubungi konter jika ada pertanyaan terkait unit yang telah diambil kembali.</li>
-              </ul>
+            <div className="py-1.5 space-y-0.5 text-[9px] leading-tight text-neutral-600 border-b border-dashed border-neutral-400">
+              <p className="font-bold text-black text-[10px]">Ketentuan Pengembalian Unit (Batal Servis):</p>
+              <p>• Unit HP diserahkan kembali dalam kondisi apa adanya sesuai saat masuk/dibatalkan.</p>
+              <p>• Tidak ada tagihan biaya servis untuk perbaikan yang dibatalkan.</p>
             </div>
           ) : receiptType === 'INTAKE' ? (
-            <div className="p-3 bg-neutral-100 border border-neutral-300 rounded-xl space-y-1 text-[11px] leading-relaxed text-neutral-700">
-              <p className="font-bold text-black">Ketentuan Penitipan Unit:</p>
-              <ul className="list-disc pl-4 space-y-0.5 text-[10px] text-neutral-600">
-                <li>Nota ini adalah bukti sah pengambilan unit HP.</li>
-                <li>Pelanggan wajib menunjukkan nota ini atau konfirmasi chat WA resmi saat mengambil unit.</li>
-                <li>Konter tidak bertanggung jawab atas kehilangan data pada memori internal HP.</li>
-                <li>Unit yang tidak diambil lebih dari 30 hari setelah konfirmasi selesai berada di luar tanggung jawab konter.</li>
-              </ul>
+            <div className="py-1.5 space-y-0.5 text-[9px] leading-tight text-neutral-600 border-b border-dashed border-neutral-400">
+              <p className="font-bold text-black text-[10px]">Ketentuan Penitipan Unit:</p>
+              <p>• Nota ini adalah bukti sah serah terima dan pengambilan HP.</p>
+              <p>• Konter tidak bertanggung jawab atas data di memori internal HP.</p>
+              <p>• Unit yang tidak diambil &gt; 30 hari di luar tanggung jawab konter.</p>
             </div>
           ) : (
-            <div className="p-3 bg-neutral-100 border border-neutral-300 rounded-xl space-y-1 text-[11px] leading-relaxed text-neutral-700">
-              <p className="font-bold text-black">Syarat & Ketentuan Garansi:</p>
-              <div className="space-y-0.5 text-[10px] text-neutral-600">
-                {storeSettings.warrantyTerms.split('\n').map((line, idx) => (
-                  <p key={idx}>{line.trim()}</p>
-                ))}
-              </div>
+            <div className="py-1.5 space-y-0.5 text-[9px] leading-tight text-neutral-600 border-b border-dashed border-neutral-400">
+              <p className="font-bold text-black text-[10px]">Syarat & Ketentuan Garansi:</p>
+              {storeSettings.warrantyTerms
+                ? storeSettings.warrantyTerms.split('\n').filter(Boolean).map((line, idx) => (
+                    <p key={idx}>• {line.trim().replace(/^[-*•\d.]+\s*/, '')}</p>
+                  ))
+                : (
+                  <p>• Garansi berlaku untuk sparepart & kerusakan yang sama dengan menunjukkan nota ini.</p>
+                )}
             </div>
           )}
 
           {/* Signatures */}
           {(isBatal || receiptType === 'PICKUP') && (
-            <div className="pt-4 border-t-2 border-dashed border-neutral-400 grid grid-cols-2 gap-4 text-center text-xs text-neutral-600">
-              <div className="space-y-8">
+            <div className="pt-2 grid grid-cols-2 gap-4 text-center text-[10px] text-neutral-600">
+              <div className="space-y-6">
                 <span>Pelanggan</span>
                 <div className="border-b border-neutral-400 w-3/4 mx-auto"></div>
-                <span className="font-bold text-black block">
+                <span className="font-bold text-black block text-[11px]">
                   ( {service.customerName} )
                 </span>
               </div>
-              <div className="space-y-8">
+              <div className="space-y-6">
                 <span>Teknisi / Konter</span>
                 <div className="border-b border-neutral-400 w-3/4 mx-auto"></div>
-                <span className="font-bold text-black block">
-                  ( {storeSettings.storeName} )
+                <span className="font-bold text-black block text-[11px]">
+                  ( {techName} )
                 </span>
               </div>
+            </div>
+          )}
+
+          {receiptType === 'INTAKE' && (
+            <div className="text-center pt-1 text-[10px] text-neutral-600 font-medium">
+              Terima kasih telah mempercayakan servis HP Anda di {storeSettings.storeName || 'konter kami'}.
             </div>
           )}
         </div>
