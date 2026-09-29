@@ -212,8 +212,7 @@ html.light ::-webkit-scrollbar-thumb:hover {
 
 @media print {
   @page {
-    /* Optimasi untuk printer thermal 58mm */
-    size: 58mm auto;
+    /* Margin dinamis untuk printer thermal 58mm, 80mm, A5, maupun A4 */
     margin: 2mm 1mm;
   }
 
@@ -245,7 +244,8 @@ html.light ::-webkit-scrollbar-thumb:hover {
     height: auto !important;
     overflow: visible !important;
     padding: 1mm !important;
-    width: 54mm !important;
+    width: 100% !important;
+    max-width: 100% !important;
     font-size: 8pt !important;
     line-height: 1.15 !important;
   }

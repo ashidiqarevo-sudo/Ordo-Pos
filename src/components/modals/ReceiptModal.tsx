@@ -74,11 +74,11 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   return (
     <div
       id="detailModal"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200 print:p-0 print:static print:bg-white"
     >
       <div
         id="detailModalCard"
-        className="bg-zinc-950 border border-zinc-800 rounded-2xl w-full max-w-lg max-h-[95vh] flex flex-col overflow-hidden shadow-2xl"
+        className="bg-zinc-950 border border-zinc-800 rounded-2xl w-full max-w-lg max-h-[95vh] flex flex-col overflow-hidden shadow-2xl print:border-none print:shadow-none print:w-full print:max-w-full print:rounded-none print:bg-white"
       >
         {/* Header - Not printed */}
         <div className="px-6 py-3.5 border-b border-zinc-800 flex items-center justify-between bg-zinc-900 no-print">
@@ -124,7 +124,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
         {/* Printable Receipt Body - Modern Compact Flow */}
         <div
           id="printableReceipt"
-          className="overflow-y-auto p-4 sm:p-5 flex-1 space-y-2.5 text-xs bg-white text-black print:bg-white print:text-black"
+          className="overflow-y-auto p-4 sm:p-5 flex-1 space-y-2.5 text-xs bg-white text-black print:bg-white print:text-black print:w-full print:max-w-full print:p-0"
         >
           {/* Store Branding */}
           <div className="text-center pb-2 border-b border-black">
@@ -182,10 +182,10 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </div>
             <div className="flex justify-between items-start gap-2 pt-0.5">
               <span className="text-neutral-600 shrink-0">Pelanggan:</span>
-              <span className="font-bold text-black text-right">
+              <span className="font-bold text-black text-right break-words min-w-0">
                 {service.customerName}
                 {service.customerPhone && service.customerPhone !== 'Tanpa WA' && (
-                  <span className="font-mono font-normal text-neutral-600 block text-[11px]">
+                  <span className="font-mono font-normal text-neutral-600 block text-[11px] break-all">
                     {service.customerPhone}
                   </span>
                 )}
@@ -197,39 +197,39 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           <div className="py-2 border-b border-dashed border-neutral-400 space-y-1.5 text-xs">
             <div className="flex justify-between items-start gap-2">
               <span className="text-neutral-600 shrink-0">Unit HP:</span>
-              <span className="font-black text-black text-right">{service.deviceModel}</span>
+              <span className="font-black text-black text-right break-words min-w-0">{service.deviceModel}</span>
             </div>
 
             {receiptType === 'INTAKE' && service.screenLock && service.screenLock !== '-' && (
               <div className="flex justify-between items-center gap-2">
                 <span className="text-neutral-600 shrink-0">Kunci Layar:</span>
-                <span className="font-mono font-bold text-black text-right">{service.screenLock}</span>
+                <span className="font-mono font-bold text-black text-right break-all min-w-0">{service.screenLock}</span>
               </div>
             )}
 
             <div className="flex justify-between items-start gap-2">
               <span className="text-neutral-600 shrink-0">Keluhan:</span>
-              <span className="font-medium text-black text-right">{service.complaints.join(', ')}</span>
+              <span className="font-medium text-black text-right break-words min-w-0">{service.complaints.join(', ')}</span>
             </div>
 
             {service.diagnosis && (
               <div className="flex justify-between items-start gap-2">
                 <span className="text-neutral-600 shrink-0">Diagnosis:</span>
-                <span className="font-bold text-black text-right">{service.diagnosis}</span>
+                <span className="font-bold text-black text-right break-words min-w-0">{service.diagnosis}</span>
               </div>
             )}
 
             {service.actionTaken && (
               <div className="flex justify-between items-start gap-2">
                 <span className="text-neutral-600 shrink-0">Tindakan:</span>
-                <span className="font-bold text-black text-right">{service.actionTaken}</span>
+                <span className="font-bold text-black text-right break-words min-w-0">{service.actionTaken}</span>
               </div>
             )}
 
             {isBatal && (
               <div className="flex justify-between items-start gap-2 bg-white p-1.5 rounded border border-neutral-300">
                 <span className="font-bold text-neutral-800 shrink-0">Alasan Batal:</span>
-                <span className="font-bold text-black text-right">
+                <span className="font-bold text-black text-right break-words min-w-0">
                   {service.cancelReason || 'Dibatalkan oleh pelanggan/teknisi'}
                 </span>
               </div>
@@ -238,14 +238,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             {service.notes && service.notes !== '-' && (
               <div className="flex justify-between items-start gap-2">
                 <span className="text-neutral-600 shrink-0">Catatan Fisik:</span>
-                <span className="text-neutral-800 text-right">{service.notes}</span>
+                <span className="text-neutral-800 text-right break-words min-w-0">{service.notes}</span>
               </div>
             )}
 
             {!isBatal && receiptType === 'PICKUP' && (
               <div className="flex justify-between items-center gap-2 pt-1 border-t border-neutral-200">
                 <span className="text-neutral-600 shrink-0">Garansi Toko:</span>
-                <span className="font-bold text-black text-right">
+                <span className="font-bold text-black text-right break-words min-w-0">
                   {service.warrantyDays ? `${service.warrantyDays} Hari (s/d ${getWarrantyExpiry()})` : 'Non-Garansi'}
                 </span>
               </div>
@@ -306,26 +306,26 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           {/* Specific Terms based on Receipt Type (Ultra-Compact) */}
           {isBatal ? (
             <div className="py-1 text-[8px] leading-none text-neutral-600 border-b border-dashed border-neutral-400">
-              <p className="font-bold text-black text-[8.5px] pb-0.5">Ketentuan Pengembalian Unit (Batal Servis):</p>
-              <p className="leading-tight">• Unit HP diserahkan kembali dalam kondisi apa adanya sesuai saat masuk/dibatalkan.</p>
-              <p className="leading-tight">• Tidak ada tagihan biaya servis untuk perbaikan yang dibatalkan.</p>
+              <p className="font-bold text-black text-[8.5px] pb-0.5 break-words">Ketentuan Pengembalian Unit (Batal Servis):</p>
+              <p className="leading-tight break-words">• Unit HP diserahkan kembali dalam kondisi apa adanya sesuai saat masuk/dibatalkan.</p>
+              <p className="leading-tight break-words">• Tidak ada tagihan biaya servis untuk perbaikan yang dibatalkan.</p>
             </div>
           ) : receiptType === 'INTAKE' ? (
             <div className="py-1 text-[8px] leading-none text-neutral-600 border-b border-dashed border-neutral-400">
-              <p className="font-bold text-black text-[8.5px] pb-0.5">Ketentuan Penitipan Unit:</p>
-              <p className="leading-tight">• Nota ini adalah bukti sah serah terima dan pengambilan HP.</p>
-              <p className="leading-tight">• Konter tidak bertanggung jawab atas data di memori internal HP.</p>
-              <p className="leading-tight">• Unit yang tidak diambil &gt; 30 hari di luar tanggung jawab konter.</p>
+              <p className="font-bold text-black text-[8.5px] pb-0.5 break-words">Ketentuan Penitipan Unit:</p>
+              <p className="leading-tight break-words">• Nota ini adalah bukti sah serah terima dan pengambilan HP.</p>
+              <p className="leading-tight break-words">• Konter tidak bertanggung jawab atas data di memori internal HP.</p>
+              <p className="leading-tight break-words">• Unit yang tidak diambil &gt; 30 hari di luar tanggung jawab konter.</p>
             </div>
           ) : (
             <div className="py-1 text-[8px] leading-none text-neutral-600 border-b border-dashed border-neutral-400">
-              <p className="font-bold text-black text-[8.5px] pb-0.5">Syarat & Ketentuan Garansi:</p>
+              <p className="font-bold text-black text-[8.5px] pb-0.5 break-words">Syarat & Ketentuan Garansi:</p>
               {storeSettings.warrantyTerms
                 ? storeSettings.warrantyTerms.split('\n').filter(Boolean).map((line, idx) => (
-                    <p key={idx} className="leading-tight">• {line.trim().replace(/^[-*•\d.]+\s*/, '')}</p>
+                    <p key={idx} className="leading-tight break-words">• {line.trim().replace(/^[-*•\d.]+\s*/, '')}</p>
                   ))
                 : (
-                  <p className="leading-tight">• Garansi berlaku untuk sparepart & kerusakan yang sama dengan menunjukkan nota ini.</p>
+                  <p className="leading-tight break-words">• Garansi berlaku untuk sparepart & kerusakan yang sama dengan menunjukkan nota ini.</p>
                 )}
             </div>
           )}
@@ -336,14 +336,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               <div className="space-y-6">
                 <span>Pelanggan</span>
                 <div className="border-b border-neutral-400 w-3/4 mx-auto"></div>
-                <span className="font-bold text-black block text-[11px]">
+                <span className="font-bold text-black block text-[11px] break-words">
                   ( {service.customerName} )
                 </span>
               </div>
               <div className="space-y-6">
                 <span>Teknisi / Konter</span>
                 <div className="border-b border-neutral-400 w-3/4 mx-auto"></div>
-                <span className="font-bold text-black block text-[11px]">
+                <span className="font-bold text-black block text-[11px] break-words">
                   ( {techName} )
                 </span>
               </div>
@@ -351,7 +351,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           )}
 
           {receiptType === 'INTAKE' && (
-            <div className="text-center pt-0.5 text-[8px] text-neutral-500 font-medium leading-tight">
+            <div className="text-center pt-0.5 text-[8px] text-neutral-500 font-medium leading-tight break-words">
               Terima kasih telah mempercayakan servis HP Anda di {storeSettings.storeName || 'konter kami'}.
             </div>
           )}
