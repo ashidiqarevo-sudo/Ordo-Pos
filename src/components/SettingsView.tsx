@@ -911,9 +911,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <Lock className="w-4 h-4 text-emerald-400" />
             <h4 className="text-xs font-bold text-white">Ganti Kata Sandi</h4>
           </div>
-          <form onSubmit={handleUpdatePassword} className="space-y-2">
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-2.5">
-              <div className="flex-1 space-y-1.5">
+          <form onSubmit={handleUpdatePassword} className="space-y-2.5">
+            <div className="flex flex-row items-center gap-3">
+              <div className="flex-1 space-y-1">
                 <div className="relative">
                   <input
                     type={showPassword ? 'text' : 'password'}
@@ -946,10 +946,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   Gunakan minimal 6 karakter kombinasi huruf dan angka.
                 </p>
               </div>
+
               <button
                 type="submit"
                 disabled={isUpdatingPassword || !newPassword.trim()}
-                className="h-[38px] px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-black font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95 shrink-0 sm:self-start"
+                className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-black font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm active:scale-95 shrink-0 whitespace-nowrap"
               >
                 {isUpdatingPassword ? (
                   <>
