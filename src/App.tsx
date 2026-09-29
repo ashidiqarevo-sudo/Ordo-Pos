@@ -824,6 +824,7 @@ export default function App() {
       actionType: 'JADI' | 'BATAL';
       finalCost: number;
       sparepartCost: number;
+      actionTaken?: string;
       cancelReason?: string;
     }
   ) => {
@@ -840,6 +841,7 @@ export default function App() {
       ...target,
       finalCost: data.finalCost,
       sparepartCost: data.sparepartCost,
+      actionTaken: data.actionTaken,
       status: 'SIAP' as const,
     };
 
@@ -848,13 +850,14 @@ export default function App() {
     setCurrentView('ready');
     addToast(`Sip, HP <b>${target.ticketNo}</b> udah siap diambil!`, 'success');
 
-    // Sinkronkan ke Supabase: status SIAP + final_cost + sparepart_cost + ready_at (non-blocking)
+    // Sinkronkan ke Supabase: status SIAP + final_cost + sparepart_cost + action_taken + ready_at (non-blocking)
     if (currentUser?.storeId) {
       markServiceReady({
         ticketId,
         storeId: currentUser.storeId,
         finalCost: data.finalCost,
         sparepartCost: data.sparepartCost,
+        actionTaken: data.actionTaken,
       }).catch((err) => console.error('[App] markServiceReady error:', err));
     }
 

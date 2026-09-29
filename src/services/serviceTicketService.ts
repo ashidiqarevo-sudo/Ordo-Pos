@@ -23,6 +23,8 @@ export interface MarkServiceReadyParams {
   finalCost: number | string;
   /** Bisa berupa string format titik ribuan ("50.000") atau number */
   sparepartCost: number | string;
+  /** Deskripsi tindakan perbaikan / penggantian sparepart */
+  actionTaken?: string;
 }
 
 export interface CancelServiceTicketParams {
@@ -85,6 +87,7 @@ export function mapDatabaseServiceToItem(row: any): ServiceItem {
     finalCost: Number(row.final_cost) || 0,
     dp: Number(row.dp_amount) || 0,
     sparepartCost: Number(row.sparepart_cost) || 0,
+    actionTaken: row.action_taken || undefined,
     warrantyDays: Number(row.warranty_days) || 7,
     paymentMethod: row.payment_method || '-',
     pickedUpAt: row.picked_up_at
@@ -374,7 +377,7 @@ export async function updateDiagnosis(
 export async function markServiceReady(
   params: MarkServiceReadyParams
 ): Promise<{ success: boolean; error?: string | null }> {
-  const { ticketId, storeId, finalCost, sparepartCost } = params;
+  const { ticketId, storeId, finalCost, sparepartCost, actionTaken } = params;
 
   const parsedFinalCost = parseNumberFromDots(finalCost);
   const parsedSparepartCost = parseNumberFromDots(sparepartCost);
@@ -385,19 +388,39 @@ export async function markServiceReady(
   }
 
   try {
+    const updateData: Record<string, any> = {
+      status: 'SIAP',
+      final_cost: parsedFinalCost,
+      sparepart_cost: parsedSparepartCost,
+      ready_at: nowIso,
+      updated_at: nowIso,
+    };
+
+    if (actionTaken !== undefined) {
+      updateData.action_taken = actionTaken;
+    }
+
     const { error } = await supabase
       .from('services')
-      .update({
-        status: 'SIAP',
-        final_cost: parsedFinalCost,
-        sparepart_cost: parsedSparepartCost,
-        ready_at: nowIso,
-        updated_at: nowIso,
-      })
+      .update(updateData)
       .eq('id', ticketId)
       .eq('store_id', storeId);
 
     if (error) {
+      // Fallback jika kolom action_taken belum ada di remote table services Supabase
+      if (error.message && error.message.includes('action_taken')) {
+        console.warn('[serviceTicketService] Kolom action_taken tidak ditemukan di tabel services, mencoba update tanpa action_taken');
+        delete updateData.action_taken;
+        const retryRes = await supabase
+          .from('services')
+          .update(updateData)
+          .eq('id', ticketId)
+          .eq('store_id', storeId);
+        if (retryRes.error) {
+          return { success: false, error: retryRes.error.message };
+        }
+        return { success: true };
+      }
       console.error('[serviceTicketService] Gagal set status SIAP:', error);
       return { success: false, error: error.message };
     }

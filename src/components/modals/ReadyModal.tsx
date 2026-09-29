@@ -13,6 +13,7 @@ interface ReadyModalProps {
       actionType: 'JADI' | 'BATAL';
       finalCost: number;
       sparepartCost: number;
+      actionTaken?: string;
       cancelReason?: string;
     }
   ) => void;
@@ -27,6 +28,7 @@ export const ReadyModal: React.FC<ReadyModalProps> = ({
   const [actionType, setActionType] = useState<'JADI' | 'BATAL'>('JADI');
   const [finalCost, setFinalCost] = useState<string>('');
   const [sparepartCost, setSparepartCost] = useState<string>('');
+  const [actionTaken, setActionTaken] = useState<string>('');
   const [cancelReason, setCancelReason] = useState<string>('');
 
   useEffect(() => {
@@ -34,6 +36,7 @@ export const ReadyModal: React.FC<ReadyModalProps> = ({
       setActionType('JADI');
       setFinalCost((service.finalCost || service.estimatedCost || '').toString());
       setSparepartCost((service.sparepartCost || '').toString());
+      setActionTaken(service.actionTaken || '');
       setCancelReason(service.cancelReason || '');
     }
   }, [service]);
@@ -52,6 +55,7 @@ export const ReadyModal: React.FC<ReadyModalProps> = ({
         actionType: 'JADI',
         finalCost: finalCostNum,
         sparepartCost: sparepartCostNum,
+        actionTaken: actionTaken.trim() || undefined,
       });
     } else {
       onSubmit(service.id, {
@@ -191,6 +195,19 @@ export const ReadyModal: React.FC<ReadyModalProps> = ({
                   onChange={(e) => setSparepartCost(e.target.value)}
                   placeholder="0"
                   className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-zinc-300 font-bold focus:bg-black focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-zinc-300 font-bold mb-1">
+                  Tindakan (Opsional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={actionTaken}
+                  onChange={(e) => setActionTaken(e.target.value)}
+                  placeholder="Contoh: Ganti LCD, IC Power, perbaikan jalur..."
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-zinc-300 text-xs focus:bg-black focus:border-emerald-500 focus:outline-none placeholder:text-zinc-600 resize-none"
                 />
               </div>
 
