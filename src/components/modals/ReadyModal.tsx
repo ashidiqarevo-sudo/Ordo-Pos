@@ -47,6 +47,7 @@ export const ReadyModal: React.FC<ReadyModalProps> = ({
   const sparepartCostNum = parseNumberFromDots(sparepartCost);
   const dpNum = Number(service.dp) || 0;
   const balance = Math.max(0, finalCostNum - dpNum);
+  const profit = finalCostNum - sparepartCostNum;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -221,7 +222,7 @@ export const ReadyModal: React.FC<ReadyModalProps> = ({
                 <div className="p-3 bg-zinc-900 rounded-xl border border-zinc-800">
                   <span className="text-zinc-400 block text-[11px]">Keuntungan Servis:</span>
                   <span className="text-emerald-400 font-black font-mono text-sm">
-                    {formatRupiah(finalCostNum - (parseFloat(sparepartCost) || 0))}
+                    {formatRupiah(profit)}
                   </span>
                 </div>
               </div>
