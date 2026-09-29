@@ -1,5 +1,6 @@
 @import "tailwindcss";
 
+@variant dark (&:where(.dark, .dark *));
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
@@ -36,7 +37,7 @@ html.dark {
 
 html.light {
   color-scheme: light;
-  --color-zinc-950: #f8fafc;
+  --color-zinc-950: #ffffff;
   --color-zinc-900: #ffffff;
   --color-zinc-800: #e2e8f0;
   --color-zinc-700: #cbd5e1;
@@ -76,21 +77,28 @@ html.light .text-amber-300 {
 
 body {
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-  background-color: #050505;
-  color: #f4f4f5;
+  background-color: #09090b;
+  color: #ffffff;
 }
 
-html.light body {
-  background-color: #f8fafc;
-  color: #0f172a;
+html.light body,
+body:not(.dark) {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+}
+
+html.dark body,
+body.dark {
+  background-color: #09090b !important;
+  color: #ffffff !important;
 }
 
 html.light .bg-black {
-  background-color: #f8fafc !important;
+  background-color: #ffffff !important;
 }
 
 html.light .bg-zinc-950 {
-  background-color: #f1f5f9 !important;
+  background-color: #ffffff !important;
 }
 
 html.light .bg-zinc-900 {
@@ -177,15 +185,6 @@ html.light button.bg-emerald-600 {
   color: #000000 !important;
 }
 
-html.light #printableReceipt .bg-black {
-  background-color: #000000 !important;
-}
-
-html.light #printableReceipt .text-white,
-html.light #printableReceipt .bg-black .text-white {
-  color: #ffffff !important;
-}
-
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -250,6 +249,11 @@ html.light ::-webkit-scrollbar-thumb:hover {
     width: 54mm !important;
     font-size: 8pt !important;
     line-height: 1.15 !important;
+  }
+
+  #printableReceipt,
+  #printableReceipt * {
+    background-color: transparent !important;
   }
 
   /* Kompakkan semua elemen di dalam nota */

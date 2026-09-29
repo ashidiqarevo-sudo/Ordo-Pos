@@ -156,11 +156,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           </div>
 
           {/* Receipt Document Title Banner */}
-          <div
-            className={`text-center py-1 rounded font-black tracking-wider uppercase text-[11px] ${
-              isBatal ? 'bg-neutral-900 text-white' : 'bg-black text-white'
-            }`}
-          >
+          <div className="text-center py-1 border-y border-black bg-white text-black font-bold tracking-wider uppercase text-[11px]">
             {isBatal
               ? 'NOTA PENGEMBALIAN UNIT (BATAL SERVIS)'
               : receiptType === 'INTAKE'
@@ -231,7 +227,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             )}
 
             {isBatal && (
-              <div className="flex justify-between items-start gap-2 bg-neutral-100 p-1.5 rounded border border-neutral-300">
+              <div className="flex justify-between items-start gap-2 bg-white p-1.5 rounded border border-neutral-300">
                 <span className="font-bold text-neutral-800 shrink-0">Alasan Batal:</span>
                 <span className="font-bold text-black text-right">
                   {service.cancelReason || 'Dibatalkan oleh pelanggan/teknisi'}

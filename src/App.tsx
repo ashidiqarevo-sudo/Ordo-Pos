@@ -85,23 +85,38 @@ export default function App() {
     return 'light';
   });
 
+  const applyThemeToDOM = (t: 'dark' | 'light') => {
+    const root = document.documentElement;
+    const body = document.body;
+    if (t === 'dark') {
+      root.classList.add('dark');
+      root.classList.remove('light');
+      if (body) {
+        body.classList.add('dark');
+        body.classList.remove('light');
+      }
+    } else {
+      root.classList.add('light');
+      root.classList.remove('dark');
+      if (body) {
+        body.classList.add('light');
+        body.classList.remove('dark');
+      }
+    }
+  };
+
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_THEME, theme);
     } catch {
       // ignore
     }
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-      document.documentElement.classList.remove('light');
-    } else {
-      document.documentElement.classList.add('light');
-      document.documentElement.classList.remove('dark');
-    }
+    applyThemeToDOM(theme);
   }, [theme]);
 
   const handleToggleTheme = (newTheme: 'dark' | 'light') => {
     setTheme(newTheme);
+    applyThemeToDOM(newTheme);
     addToast(
       newTheme === 'dark'
         ? 'Mode Gelap (Dark Emerald) aktif'
@@ -1386,11 +1401,7 @@ export default function App() {
   // Jika sedang di landing page ATAU belum login, tampilkan Landing Page
   if (currentView === 'landing' || !currentUser) {
     return (
-      <div
-        className={`min-h-screen ${
-          theme === 'dark' ? 'dark bg-black' : 'light bg-slate-50'
-        }`}
-      >
+      <div className="min-h-screen bg-white dark:bg-zinc-950 text-gray-900 dark:text-white">
         <ToastContainer toasts={toasts} />
         <LandingPage
           onStart={() => {
@@ -1443,15 +1454,11 @@ export default function App() {
 
   return (
     <div
-      className={`min-h-screen w-full flex justify-center selection:bg-emerald-500 selection:text-black ${
-        theme === 'dark' ? 'bg-zinc-950 text-zinc-100' : 'bg-slate-200/60 text-slate-900'
-      }`}
+      className="min-h-screen w-full flex justify-center selection:bg-emerald-500 selection:text-black bg-white dark:bg-zinc-950 text-gray-900 dark:text-white"
     >
       {/* Wrapper Layout Utama: Dibatasi max-w-[1440px] agar konten tetap terpusat rapi di monitor ultrawide */}
       <div
-        className={`w-full max-w-[1440px] h-screen overflow-hidden antialiased flex flex-row shadow-2xl relative border-x border-slate-300/40 dark:border-zinc-800/60 ${
-          theme === 'dark' ? 'bg-black text-zinc-100' : 'bg-slate-100 text-slate-900'
-        }`}
+        className="w-full max-w-[1440px] h-screen overflow-hidden antialiased flex flex-row shadow-2xl relative border-x border-slate-200 dark:border-zinc-800/60 bg-white dark:bg-zinc-950 text-gray-900 dark:text-white"
       >
         {/* Toast Notification Container */}
         <ToastContainer toasts={toasts} />
@@ -1470,9 +1477,7 @@ export default function App() {
 
       {/* Main Content Area */}
       <div
-        className={`flex-1 flex flex-col min-w-0 h-screen overflow-y-auto ${
-          theme === 'dark' ? 'bg-black' : 'bg-slate-50'
-        }`}
+        className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto bg-white dark:bg-zinc-950 text-gray-900 dark:text-white"
       >
         <Header
           currentView={currentView}
