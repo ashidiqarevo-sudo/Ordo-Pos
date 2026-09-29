@@ -461,7 +461,7 @@ export default function App() {
     setCurrentUser(user);
     setIsAuthModalOpen(false);
     try {
-      localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(user));
+      sessionStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(user));
     } catch {
       // ignore
     }
@@ -508,6 +508,12 @@ export default function App() {
 
   const handleLogout = async () => {
     await signOutOwner(); // Memanggil supabase.auth.signOut() — onAuthStateChange akan otomatis menangani reset state
+    try {
+      sessionStorage.removeItem(STORAGE_KEY_AUTH);
+      localStorage.removeItem(STORAGE_KEY_AUTH);
+    } catch {
+      // ignore
+    }
     setCurrentUser(null);
     setCurrentView('landing');
     if (typeof window !== 'undefined') {
@@ -531,7 +537,7 @@ export default function App() {
       };
       setCurrentUser(updatedUser);
       try {
-        localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedUser));
+        sessionStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedUser));
       } catch {
         // ignore
       }
@@ -1572,7 +1578,7 @@ export default function App() {
                   };
                   setCurrentUser(updatedUser);
                   try {
-                    localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedUser));
+                    sessionStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedUser));
                   } catch {
                     // ignore
                   }

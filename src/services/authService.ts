@@ -45,7 +45,7 @@ type StoreRow = {
 export async function fetchUserProfileAndStore(userId: string): Promise<AuthUser | null> {
   if (!isSupabaseConfigured()) {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY_FALLBACK_AUTH);
+      const saved = sessionStorage.getItem(STORAGE_KEY_FALLBACK_AUTH);
       if (saved) return JSON.parse(saved);
     } catch {
       // ignore
@@ -220,7 +220,7 @@ export async function signInOwner(params: {
       );
 
       if (match) {
-        localStorage.setItem(STORAGE_KEY_FALLBACK_AUTH, JSON.stringify(match));
+        sessionStorage.setItem(STORAGE_KEY_FALLBACK_AUTH, JSON.stringify(match));
         return { user: match, error: null };
       }
 
@@ -237,7 +237,7 @@ export async function signInOwner(params: {
         hasCompletedStoreSetup: true,
         createdAt: new Date().toISOString(),
       };
-      localStorage.setItem(STORAGE_KEY_FALLBACK_AUTH, JSON.stringify(demoUser));
+      sessionStorage.setItem(STORAGE_KEY_FALLBACK_AUTH, JSON.stringify(demoUser));
       return { user: demoUser, error: null };
     } catch {
       // ignore
@@ -289,7 +289,7 @@ export async function signOutOwner(): Promise<void> {
     }
   }
   try {
-    localStorage.removeItem(STORAGE_KEY_FALLBACK_AUTH);
+    sessionStorage.removeItem(STORAGE_KEY_FALLBACK_AUTH);
   } catch {
     // ignore
   }
@@ -301,7 +301,7 @@ export async function signOutOwner(): Promise<void> {
 export async function getInitialAuthUser(): Promise<AuthUser | null> {
   if (!isSupabaseConfigured()) {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY_FALLBACK_AUTH);
+      const saved = sessionStorage.getItem(STORAGE_KEY_FALLBACK_AUTH);
       if (saved) return JSON.parse(saved);
     } catch {
       // ignore

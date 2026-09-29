@@ -33,6 +33,7 @@ const effectiveKey = isSupabaseConfigured()
 
 export const supabase = createClient<Database>(effectiveUrl, effectiveKey, {
   auth: {
+    storage: typeof window !== 'undefined' ? window.sessionStorage : undefined,
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,

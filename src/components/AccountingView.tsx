@@ -1424,8 +1424,9 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
                       </td>
 
                       <td className="py-3.5 px-4 text-center">
-                        <span className="px-3 py-1 rounded-full bg-zinc-800 text-emerald-400 font-bold text-xs border border-zinc-700">
-                          {m.unitSelesai} Unit Riwayat
+                        <span className="inline-flex flex-col items-center gap-1 px-3 py-1 rounded-full bg-zinc-800 text-emerald-400 font-bold text-xs border border-zinc-700">
+                          <span>{m.unitSelesai}</span>
+                          <span>Unit Riwayat</span>
                         </span>
                       </td>
 
