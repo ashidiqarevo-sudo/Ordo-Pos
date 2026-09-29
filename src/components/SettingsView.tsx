@@ -898,7 +898,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <UserCheck className="w-4 h-4 text-emerald-400" />
                 <h4 className="text-xs font-bold text-white">Informasi Akun</h4>
               </div>
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-bold text-white">
                     {formData.ownerName || currentUser?.name || 'Pemilik Toko'}
@@ -907,8 +907,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     Sesi Aktif
                   </span>
                 </div>
-                <p className="text-xs text-zinc-400">
+                <p className="text-sm text-zinc-300 font-medium break-all">
                   {currentUser?.email || formData.storePhone || 'Akun Administrator Konter'}
+                </p>
+                <p className="text-xs text-zinc-400 font-mono truncate" title={`ID: ${currentUser?.id || 'auth.uid.active'}`}>
+                  ID: {currentUser?.id || 'auth.uid.active'}
                 </p>
               </div>
             </div>
@@ -950,7 +953,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   type="button"
                   onClick={handleUpdatePassword}
                   disabled={isUpdatingPassword}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shrink-0 transition-colors disabled:opacity-50 cursor-pointer"
+                  className="h-[38px] px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium flex items-center justify-center gap-2 shrink-0 transition-colors disabled:opacity-50 cursor-pointer whitespace-nowrap"
                 >
                   <Save size={16} />
                   {isUpdatingPassword ? "Menyimpan..." : "Simpan Sandi Baru"}
