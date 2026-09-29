@@ -25,6 +25,12 @@ export interface MarkServiceReadyParams {
   sparepartCost: number | string;
 }
 
+export interface CancelServiceTicketParams {
+  ticketId: string;
+  storeId?: string;
+  cancelReason?: string;
+}
+
 export interface CheckoutServiceParams {
   ticketId: string;
   storeId?: string;
@@ -399,6 +405,46 @@ export async function markServiceReady(
     return { success: true };
   } catch (err: any) {
     console.error('[serviceTicketService] Error markServiceReady:', err);
+    return { success: false, error: err?.message };
+  }
+}
+
+/**
+ * Membatalkan tiket servis yang sedang berjalan dan memindahkannya ke tahap 'Siap Diambil'.
+ * Status diubah menjadi 'BATAL', biaya diset 0, dan picked_up_at dibiarkan null.
+ */
+export async function cancelServiceTicket(
+  params: CancelServiceTicketParams
+): Promise<{ success: boolean; error?: string | null }> {
+  const { ticketId, storeId, cancelReason } = params;
+  const nowIso = new Date().toISOString();
+
+  if (!isSupabaseConfigured() || !storeId) {
+    return { success: true };
+  }
+
+  try {
+    const { error } = await supabase
+      .from('services')
+      .update({
+        status: 'BATAL',
+        cancel_reason: cancelReason || 'Dibatalkan oleh pelanggan/teknisi',
+        final_cost: 0,
+        sparepart_cost: 0,
+        picked_up_at: null,
+        updated_at: nowIso,
+      })
+      .eq('id', ticketId)
+      .eq('store_id', storeId);
+
+    if (error) {
+      console.error('[serviceTicketService] Gagal membatalkan tiket:', error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('[serviceTicketService] Error cancelServiceTicket:', err);
     return { success: false, error: err?.message };
   }
 }

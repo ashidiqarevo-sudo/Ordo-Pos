@@ -52,6 +52,7 @@ import {
   markServiceReady,
   checkoutService,
   updateServiceStatus,
+  cancelServiceTicket,
 } from './services/serviceTicketService';
 import {
   fetchCashEntries,
@@ -192,8 +193,25 @@ export default function App() {
     }
   }, [cashEntries]);
 
+  // Helper navigasi URL: Menentukan view awal berdasarkan pathname.
+  // Root path ('/') SELALU mengarah ke 'landing' terlepas dari status login user.
+  const getInitialView = (): ViewType => {
+    if (typeof window === 'undefined') return 'landing';
+    const path = window.location.pathname.replace(/\/+$/, '') || '/';
+    if (path === '/' || path === '') return 'landing';
+    if (path === '/dashboard' || path.endsWith('/dashboard')) return 'dashboard';
+    if (path === '/customers' || path.endsWith('/customers')) return 'customers';
+    if (path === '/board' || path.endsWith('/board')) return 'board';
+    if (path === '/ready' || path.endsWith('/ready')) return 'ready';
+    if (path === '/history' || path.endsWith('/history')) return 'history';
+    if (path === '/accounting' || path.endsWith('/accounting')) return 'accounting';
+    if (path === '/settings' || path.endsWith('/settings')) return 'settings';
+    if (path === '/landing' || path.endsWith('/landing')) return 'landing';
+    return 'landing';
+  };
+
   // Navigation & Filtering
-  const [currentView, setCurrentView] = useState<ViewType>('dashboard');
+  const [currentView, setCurrentView] = useState<ViewType>(getInitialView);
   const [searchQuery, setSearchQuery] = useState('');
   const [historyFilter, setHistoryFilter] = useState<HistoryFilterType>('SEMUA');
 
@@ -311,16 +329,37 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync URL slug with store username: ordo.pos/(username-toko)/(view)
+  // Listen to popstate (browser back/forward button)
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentView(getInitialView());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Sync URL slug: path '/' untuk landing page, dan path '/dashboard' atau '/:username/:view' untuk dashboard
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    if (currentView === 'landing') {
+      if (window.location.pathname !== '/') {
+        window.history.replaceState(null, '', '/');
+      }
+      return;
+    }
+
     if (currentUser) {
       const activeUsername =
         currentUser.storeUsername ||
-        storeSettings.storeUsername ||
-        'jayaphone';
-      const targetPath = `/${activeUsername}/${currentView}`;
-      if (window.location.pathname !== targetPath) {
+        storeSettings.storeUsername;
+      const targetPath = activeUsername
+        ? `/${activeUsername}/${currentView}`
+        : `/${currentView}`;
+      if (
+        window.location.pathname !== targetPath &&
+        window.location.pathname !== `/${currentView}`
+      ) {
         window.history.replaceState(null, '', targetPath);
       }
     } else {
@@ -470,7 +509,10 @@ export default function App() {
   const handleLogout = async () => {
     await signOutOwner(); // Memanggil supabase.auth.signOut() — onAuthStateChange akan otomatis menangani reset state
     setCurrentUser(null);
-    setCurrentView('dashboard');
+    setCurrentView('landing');
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', '/');
+    }
     setIsAuthModalOpen(false);
     addToast('Anda telah keluar (Logout).', 'info');
   };
@@ -728,6 +770,47 @@ export default function App() {
     }
   };
 
+  // Handlers: Batalkan servis (Servis Berjalan -> Siap Diambil)
+  const handleCancelService = async (ticketId: string, reason?: string) => {
+    const target = services.find((s) => s.id === ticketId);
+    if (!target) return;
+
+    const cancelReason = reason || 'Dibatalkan oleh pelanggan/teknisi';
+    const updated: ServiceItem = {
+      ...target,
+      status: 'BATAL',
+      finalCost: 0,
+      sparepartCost: 0,
+      cancelReason,
+      pickedUpAt: null, // Masuk ke Siap Diambil sampai customer mengambil
+    };
+
+    // 1. Ubah status tiket di database Supabase
+    if (currentUser?.storeId) {
+      try {
+        await cancelServiceTicket({
+          ticketId,
+          storeId: currentUser.storeId,
+          cancelReason,
+        });
+      } catch (err) {
+        console.error('[App] Gagal membatalkan tiket di Supabase:', err);
+      }
+    }
+
+    // 2. Perbarui state lokal & alihkan tampilan langsung ke 'Siap Diambil' tanpa refresh
+    setServices((prev) => [updated, ...prev.filter((s) => s.id !== ticketId)]);
+    setReadyTicketId(null);
+    setCurrentView('ready');
+    addToast(
+      `Servis HP <b>${target.ticketNo}</b> ditandai <b>BATAL</b> & dipindahkan ke <b>Siap Diambil</b>.`,
+      'warning'
+    );
+
+    // 3. Setelah status berhasil di-update, barulah eksekusi buka link WhatsApp-nya
+    handleSendWhatsAppReceipt(updated, 'CANCEL');
+  };
+
   // Handlers: Ready modal submit (handles JADI and BATAL)
   const handleReadySubmit = (
     ticketId: string,
@@ -742,23 +825,7 @@ export default function App() {
     if (!target) return;
 
     if (data.actionType === 'BATAL') {
-      const updated: ServiceItem = {
-        ...target,
-        status: 'BATAL',
-        finalCost: 0,
-        cancelReason: data.cancelReason || 'Dibatalkan oleh teknisi/pelanggan',
-        pickedUpAt: null, // Masuk ke Siap Diambil sampai customer mengambil
-      };
-
-      setServices((prev) => [updated, ...prev.filter((s) => s.id !== ticketId)]);
-      setReadyTicketId(null);
-      setCurrentView('ready');
-      addToast(
-        `Servis HP <b>${target.ticketNo}</b> ditandai <b>BATAL</b> & dipindahkan ke <b>Siap Diambil</b>.`,
-        'warning'
-      );
-      // Kirim WA Notifikasi Pembatalan
-      handleSendWhatsAppReceipt(updated, 'CANCEL');
+      handleCancelService(ticketId, data.cancelReason);
       return;
     }
 
@@ -1304,8 +1371,8 @@ export default function App() {
     [services, cashEntries]
   );
 
-  // Jika belum login, tampilkan Landing Page Ordo V0 yang tenang & fokus
-  if (!currentUser) {
+  // Jika sedang di landing page ATAU belum login, tampilkan Landing Page
+  if (currentView === 'landing' || !currentUser) {
     return (
       <div
         className={`min-h-screen ${
@@ -1315,21 +1382,47 @@ export default function App() {
         <ToastContainer toasts={toasts} />
         <LandingPage
           onStart={() => {
-            setAuthModalMode('login');
-            setIsAuthModalOpen(true);
+            if (currentUser) {
+              setCurrentView('dashboard');
+              if (typeof window !== 'undefined') {
+                window.history.pushState(null, '', '/dashboard');
+              }
+            } else {
+              setAuthModalMode('login');
+              setIsAuthModalOpen(true);
+            }
           }}
           onLogin={() => {
-            setAuthModalMode('login');
-            setIsAuthModalOpen(true);
+            if (currentUser) {
+              setCurrentView('dashboard');
+              if (typeof window !== 'undefined') {
+                window.history.pushState(null, '', '/dashboard');
+              }
+            } else {
+              setAuthModalMode('login');
+              setIsAuthModalOpen(true);
+            }
           }}
           theme={theme}
           onToggleTheme={handleToggleTheme}
-          currentUser={null}
+          currentUser={currentUser}
+          onOpenDashboard={() => {
+            setCurrentView('dashboard');
+            if (typeof window !== 'undefined') {
+              window.history.pushState(null, '', '/dashboard');
+            }
+          }}
         />
         <AuthModal
           isOpen={isAuthModalOpen}
           initialMode={authModalMode}
-          onLoginSuccess={handleAuthSuccess}
+          onLoginSuccess={(user, isNewReg) => {
+            handleAuthSuccess(user, isNewReg);
+            setCurrentView('dashboard');
+            if (typeof window !== 'undefined') {
+              window.history.pushState(null, '', '/dashboard');
+            }
+          }}
           onClose={() => setIsAuthModalOpen(false)}
         />
       </div>
@@ -1338,12 +1431,18 @@ export default function App() {
 
   return (
     <div
-      className={`h-screen w-screen overflow-hidden antialiased flex flex-row selection:bg-emerald-500 selection:text-black ${
-        theme === 'dark' ? 'bg-black text-zinc-100' : 'bg-slate-100 text-slate-900'
+      className={`min-h-screen w-full flex justify-center selection:bg-emerald-500 selection:text-black ${
+        theme === 'dark' ? 'bg-zinc-950 text-zinc-100' : 'bg-slate-200/60 text-slate-900'
       }`}
     >
-      {/* Toast Notification Container */}
-      <ToastContainer toasts={toasts} />
+      {/* Wrapper Layout Utama: Dibatasi max-w-[1440px] agar konten tetap terpusat rapi di monitor ultrawide */}
+      <div
+        className={`w-full max-w-[1440px] h-screen overflow-hidden antialiased flex flex-row shadow-2xl relative border-x border-slate-300/40 dark:border-zinc-800/60 ${
+          theme === 'dark' ? 'bg-black text-zinc-100' : 'bg-slate-100 text-slate-900'
+        }`}
+      >
+        {/* Toast Notification Container */}
+        <ToastContainer toasts={toasts} />
 
       {/* Navigation Sidebar */}
       <Sidebar
@@ -1420,6 +1519,7 @@ export default function App() {
               onInstantPrint={handleInstantPrint}
               onDirectWhatsApp={handleDirectWhatsApp}
               onOpenServiceModal={() => setIsServiceModalOpen(true)}
+              onCancelService={handleCancelService}
             />
           )}
 
@@ -1524,6 +1624,7 @@ export default function App() {
           )}
         </main>
       </div>
+    </div>
 
       {/* MODALS */}
       {/* 1. Intake Service Modal */}

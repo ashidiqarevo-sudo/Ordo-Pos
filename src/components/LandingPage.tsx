@@ -249,13 +249,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               )}
             </button>
 
-            {currentUser && onOpenDashboard ? (
+            {currentUser ? (
               <button
                 type="button"
-                onClick={onOpenDashboard}
+                onClick={onOpenDashboard || onStart}
                 className="px-4 py-2 rounded-xl bg-emerald-100 hover:bg-emerald-200/90 dark:bg-emerald-950/80 dark:hover:bg-emerald-900/90 text-emerald-800 dark:text-emerald-400 border border-emerald-400/80 dark:border-emerald-700/60 font-black text-xs transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
               >
-                <span>Buka Aplikasi</span>
+                <span>Masuk ke Dashboard</span>
                 <ArrowRight className="w-3.5 h-3.5 text-emerald-800 dark:text-emerald-400" />
               </button>
             ) : (
@@ -357,7 +357,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                   onClick={currentUser && onOpenDashboard ? onOpenDashboard : onStart}
                   className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-emerald-100 hover:bg-emerald-200/90 dark:bg-emerald-950/80 dark:hover:bg-emerald-900/90 text-emerald-800 dark:text-emerald-400 border border-emerald-400/80 dark:border-emerald-700/60 font-black text-sm transition-all shadow-xs active:scale-98 inline-flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <span>{currentUser ? 'Buka Papan Servis' : 'Mulai Ordo POS'}</span>
+                  <span>{currentUser ? 'Masuk ke Dashboard' : 'Mulai Ordo POS'}</span>
                   <ArrowRight className="w-4 h-4 text-emerald-800 dark:text-emerald-400" />
                 </button>
               </div>
