@@ -130,11 +130,11 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           <div className="text-center pb-2 border-b border-black">
             {storeSettings.logoUrl && (
               <div className="flex justify-center mb-1">
-                <div className="w-12 h-12 rounded-lg overflow-hidden flex items-center justify-center bg-black">
+                <div className="w-12 h-12 rounded-lg overflow-hidden flex items-center justify-center bg-transparent">
                   <img
                     src={storeSettings.logoUrl}
                     alt={storeSettings.storeName || 'Logo Toko'}
-                    className="w-full h-full object-cover bg-black"
+                    className="w-full h-full object-cover bg-transparent"
                   />
                 </div>
               </div>
