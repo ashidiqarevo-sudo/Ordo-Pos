@@ -228,14 +228,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       {/* Top Simple Navigation */}
       <header className="sticky top-0 z-30 w-full border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/95 backdrop-blur-md">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl overflow-hidden bg-black border border-slate-200 dark:border-zinc-800 flex items-center justify-center shrink-0 shadow-xs">
-              <img
-                src="/logo-konter.png"
-                alt="Logo Ordo POS"
-                className="w-full h-full object-cover bg-black rounded-xl"
-              />
-            </div>
+          <div className="flex items-center gap-2">
             <span className="text-base font-black tracking-tight text-slate-900 dark:text-white uppercase">
               ORDO POS SERVICE
             </span>
