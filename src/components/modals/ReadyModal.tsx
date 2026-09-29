@@ -7,6 +7,7 @@ interface ReadyModalProps {
   isOpen: boolean;
   onClose: () => void;
   service: ServiceItem | null;
+  technicianName?: string;
   onSubmit: (
     ticketId: string,
     data: {
@@ -14,6 +15,7 @@ interface ReadyModalProps {
       finalCost: number;
       sparepartCost: number;
       actionTaken?: string;
+      technicianName?: string;
       cancelReason?: string;
     }
   ) => void;
@@ -23,6 +25,7 @@ export const ReadyModal: React.FC<ReadyModalProps> = ({
   isOpen,
   onClose,
   service,
+  technicianName,
   onSubmit,
 }) => {
   const [actionType, setActionType] = useState<'JADI' | 'BATAL'>('JADI');
@@ -48,6 +51,7 @@ export const ReadyModal: React.FC<ReadyModalProps> = ({
   const dpNum = Number(service.dp) || 0;
   const balance = Math.max(0, finalCostNum - dpNum);
   const profit = finalCostNum - sparepartCostNum;
+  const techName = technicianName?.trim() || service.technicianName || 'Owner';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,6 +61,7 @@ export const ReadyModal: React.FC<ReadyModalProps> = ({
         finalCost: finalCostNum,
         sparepartCost: sparepartCostNum,
         actionTaken: actionTaken.trim() || undefined,
+        technicianName: techName,
       });
     } else {
       onSubmit(service.id, {
@@ -155,6 +160,12 @@ export const ReadyModal: React.FC<ReadyModalProps> = ({
               <span>Pelanggan & HP:</span>
               <span className="font-bold text-white text-right">
                 {service.customerName} - {service.deviceModel}
+              </span>
+            </div>
+            <div className="flex justify-between text-zinc-400 text-xs">
+              <span>Dikerjakan Oleh:</span>
+              <span className="font-bold text-white text-right">
+                {techName}
               </span>
             </div>
             {dpNum > 0 && (

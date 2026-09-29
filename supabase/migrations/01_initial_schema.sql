@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS public.services (
     dp_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
     sparepart_cost NUMERIC(14, 2) NOT NULL DEFAULT 0,
     action_taken TEXT,
+    technician_name TEXT,
     warranty_days INTEGER NOT NULL DEFAULT 7,
     payment_method TEXT NOT NULL DEFAULT '-',
     ready_at TIMESTAMPTZ, -- Waktu saat status berubah jadi SIAP

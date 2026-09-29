@@ -25,6 +25,8 @@ export interface MarkServiceReadyParams {
   sparepartCost: number | string;
   /** Deskripsi tindakan perbaikan / penggantian sparepart */
   actionTaken?: string;
+  /** Nama teknisi yang mengerjakan servis */
+  technicianName?: string;
 }
 
 export interface CancelServiceTicketParams {
@@ -88,6 +90,7 @@ export function mapDatabaseServiceToItem(row: any): ServiceItem {
     dp: Number(row.dp_amount) || 0,
     sparepartCost: Number(row.sparepart_cost) || 0,
     actionTaken: row.action_taken || undefined,
+    technicianName: row.technician_name || undefined,
     warrantyDays: Number(row.warranty_days) || 7,
     paymentMethod: row.payment_method || '-',
     pickedUpAt: row.picked_up_at
@@ -377,7 +380,7 @@ export async function updateDiagnosis(
 export async function markServiceReady(
   params: MarkServiceReadyParams
 ): Promise<{ success: boolean; error?: string | null }> {
-  const { ticketId, storeId, finalCost, sparepartCost, actionTaken } = params;
+  const { ticketId, storeId, finalCost, sparepartCost, actionTaken, technicianName } = params;
 
   const parsedFinalCost = parseNumberFromDots(finalCost);
   const parsedSparepartCost = parseNumberFromDots(sparepartCost);
@@ -399,6 +402,9 @@ export async function markServiceReady(
     if (actionTaken !== undefined) {
       updateData.action_taken = actionTaken;
     }
+    if (technicianName !== undefined) {
+      updateData.technician_name = technicianName;
+    }
 
     const { error } = await supabase
       .from('services')
@@ -407,9 +413,15 @@ export async function markServiceReady(
       .eq('store_id', storeId);
 
     if (error) {
-      // Fallback jika kolom action_taken belum ada di remote table services Supabase
-      if (error.message && error.message.includes('action_taken')) {
-        console.warn('[serviceTicketService] Kolom action_taken tidak ditemukan di tabel services, mencoba update tanpa action_taken');
+      // Fallback jika kolom baru belum ada di remote table services Supabase
+      if (
+        error.message &&
+        (error.message.includes('technician_name') || error.message.includes('action_taken'))
+      ) {
+        console.warn(
+          '[serviceTicketService] Kolom kustom tidak ditemukan di tabel services, mencoba update tanpa kolom tersebut'
+        );
+        delete updateData.technician_name;
         delete updateData.action_taken;
         const retryRes = await supabase
           .from('services')

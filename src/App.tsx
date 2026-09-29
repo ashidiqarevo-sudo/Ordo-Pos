@@ -825,6 +825,7 @@ export default function App() {
       finalCost: number;
       sparepartCost: number;
       actionTaken?: string;
+      technicianName?: string;
       cancelReason?: string;
     }
   ) => {
@@ -842,6 +843,7 @@ export default function App() {
       finalCost: data.finalCost,
       sparepartCost: data.sparepartCost,
       actionTaken: data.actionTaken,
+      technicianName: data.technicianName || currentUser?.name || storeSettings.ownerName || 'Owner',
       status: 'SIAP' as const,
     };
 
@@ -850,7 +852,7 @@ export default function App() {
     setCurrentView('ready');
     addToast(`Sip, HP <b>${target.ticketNo}</b> udah siap diambil!`, 'success');
 
-    // Sinkronkan ke Supabase: status SIAP + final_cost + sparepart_cost + action_taken + ready_at (non-blocking)
+    // Sinkronkan ke Supabase: status SIAP + final_cost + sparepart_cost + action_taken + technician_name + ready_at (non-blocking)
     if (currentUser?.storeId) {
       markServiceReady({
         ticketId,
@@ -858,6 +860,7 @@ export default function App() {
         finalCost: data.finalCost,
         sparepartCost: data.sparepartCost,
         actionTaken: data.actionTaken,
+        technicianName: updated.technicianName,
       }).catch((err) => console.error('[App] markServiceReady error:', err));
     }
 
@@ -1672,6 +1675,7 @@ export default function App() {
         isOpen={Boolean(readyTicketId)}
         onClose={() => setReadyTicketId(null)}
         service={activeReadyUnit}
+        technicianName={currentUser?.name || storeSettings.ownerName || 'Owner'}
         onSubmit={handleReadySubmit}
       />
 

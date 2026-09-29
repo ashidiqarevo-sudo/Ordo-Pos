@@ -210,6 +210,7 @@ export interface Database {
           dp_amount: number;
           sparepart_cost: number;
           action_taken: string | null;
+          technician_name: string | null;
           warranty_days: number;
           payment_method: string;
           ready_at: string | null;
@@ -239,6 +240,7 @@ export interface Database {
           dp_amount?: number;
           sparepart_cost?: number;
           action_taken?: string | null;
+          technician_name?: string | null;
           warranty_days?: number;
           payment_method?: string;
           ready_at?: string | null;
@@ -268,6 +270,7 @@ export interface Database {
           dp_amount?: number;
           sparepart_cost?: number;
           action_taken?: string | null;
+          technician_name?: string | null;
           warranty_days?: number;
           payment_method?: string;
           ready_at?: string | null;

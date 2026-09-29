@@ -19,6 +19,7 @@ export interface ServiceItem {
   dp: number;
   sparepartCost: number;
   actionTaken?: string;
+  technicianName?: string;
   warrantyDays: number;
   paymentMethod: string;
   pickedUpAt: string | null;
