@@ -1188,14 +1188,43 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  const handleResetDatabase = () => {
+  const handleResetDatabase = async () => {
+    // 1. Hapus state lokal (tiket & kas saja — settings & pelanggan TETAP)
     setServices([]);
     setCashEntries([]);
-    setStoreSettings(DEFAULT_STORE_SETTINGS);
-    localStorage.removeItem(STORAGE_KEY_SERVICES);
-    localStorage.removeItem(STORAGE_KEY_CASH_ENTRIES);
-    localStorage.removeItem(STORAGE_KEY_SETTINGS);
-    addToast('Semua data berhasil dihapus. Sistem bersih dan dimulai dari awal!', 'info');
+
+    // 2. Bersihkan localStorage — tiket, kas, dan semua kunci demo/ghost data
+    const ghostKeys = [
+      STORAGE_KEY_SERVICES,
+      STORAGE_KEY_CASH_ENTRIES,
+      'ordo_demo_sync_v5',          // kunci sinkronisasi data dummy
+      'ordo_servis_services_v5',    // versi lama
+      'ordo_servis_services_v4',
+      'ordo_servis_services_v3',
+      'ordo_servis_cash_entries_v1',
+    ];
+    ghostKeys.forEach((key) => {
+      try { localStorage.removeItem(key); } catch { /* ignore */ }
+    });
+    // Set ulang STORAGE_KEY_SERVICES dan CASH_ENTRIES menjadi array kosong
+    try {
+      localStorage.setItem(STORAGE_KEY_SERVICES, JSON.stringify([]));
+      localStorage.setItem(STORAGE_KEY_CASH_ENTRIES, JSON.stringify([]));
+    } catch { /* ignore */ }
+
+    // 3. Hapus dari Supabase: hanya service_tickets dan cash_entries toko ini
+    if (currentUser?.storeId) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const sb = supabase as any;
+        await sb.from('service_tickets').delete().eq('store_id', currentUser.storeId);
+        await sb.from('cash_entries').delete().eq('store_id', currentUser.storeId);
+      } catch (err) {
+        console.error('[App] handleResetDatabase Supabase error:', err);
+      }
+    }
+
+    addToast('Data tiket & kas berhasil dihapus. Pengaturan toko tetap aman!', 'info');
   };
 
   const handleLoadDemoData = () => {

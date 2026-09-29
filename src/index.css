@@ -7,7 +7,8 @@
 }
 
 :root {
-  color-scheme: dark;
+  /* Default: light. Color-scheme dikontrol oleh class .dark / .light — BUKAN dari preferensi OS */
+  color-scheme: light;
   --color-zinc-950: #09090b;
   --color-zinc-900: #18181b;
   --color-zinc-800: #27272a;
@@ -18,6 +19,19 @@
   --color-zinc-300: #d4d4d8;
   --color-zinc-200: #e4e4e7;
   --color-zinc-100: #f4f4f5;
+}
+
+/* Override prefers-color-scheme OS — kita ABAIKAN sepenuhnya.
+   Dark mode hanya dikendalikan lewat class .dark yang ditambahkan
+   oleh toggle tema di dalam aplikasi. */
+@media (prefers-color-scheme: dark) {
+  :root:not(.dark) {
+    color-scheme: light;
+  }
+}
+
+html.dark {
+  color-scheme: dark;
 }
 
 html.light {
@@ -199,31 +213,107 @@ html.light ::-webkit-scrollbar-thumb:hover {
 
 @media print {
   @page {
-    margin: 1cm;
-    size: auto;
+    /* Optimasi untuk printer thermal 58mm */
+    size: 58mm auto;
+    margin: 2mm 1mm;
   }
+
   html, body {
     height: auto !important;
     overflow: visible !important;
     background-color: #ffffff !important;
     color: #000000 !important;
+    font-size: 9pt !important;
+    line-height: 1.2 !important;
   }
+
   aside, header, #toastContainer, .no-print {
     display: none !important;
   }
-  
-  /* When printing in receipt modal */
+
+  /* Paksa SEMUA teks menjadi hitam pekat saat dicetak */
+  * {
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Ketika mencetak dalam modal receipt */
   #printableReceipt {
     display: block !important;
     position: static !important;
     height: auto !important;
     overflow: visible !important;
-    padding: 0.5cm !important;
+    padding: 1mm !important;
     color: #000000 !important;
     background: #ffffff !important;
+    width: 54mm !important;
+    font-size: 8pt !important;
+    line-height: 1.15 !important;
   }
 
-  /* When printing accounting / general views */
+  /* Kompakkan semua elemen di dalam nota */
+  #printableReceipt .space-y-4 > * + * {
+    margin-top: 2mm !important;
+  }
+  #printableReceipt .space-y-2 > * + * {
+    margin-top: 1mm !important;
+  }
+  #printableReceipt .space-y-1\.5 > * + * {
+    margin-top: 0.5mm !important;
+  }
+  #printableReceipt .p-6 {
+    padding: 1mm !important;
+  }
+  #printableReceipt .p-4,
+  #printableReceipt .p-3,
+  #printableReceipt .p-3\.5 {
+    padding: 1.5mm !important;
+  }
+  #printableReceipt .pb-3,
+  #printableReceipt .pt-4 {
+    padding-top: 1.5mm !important;
+    padding-bottom: 1.5mm !important;
+  }
+  /* Logo nota lebih kecil */
+  #printableReceipt .w-32,
+  #printableReceipt .h-32 {
+    width: 12mm !important;
+    height: 12mm !important;
+  }
+  /* Teks utama nota */
+  #printableReceipt .text-xl {
+    font-size: 10pt !important;
+  }
+  #printableReceipt .text-xs,
+  #printableReceipt .text-\[11px\],
+  #printableReceipt .text-\[10px\] {
+    font-size: 7pt !important;
+  }
+  /* Warna abu-abu -> hitam */
+  #printableReceipt .text-neutral-500,
+  #printableReceipt .text-neutral-600,
+  #printableReceipt .text-neutral-700,
+  #printableReceipt .text-neutral-800,
+  #printableReceipt .text-gray-400,
+  #printableReceipt .text-gray-500,
+  #printableReceipt .text-gray-600,
+  #printableReceipt .text-zinc-400,
+  #printableReceipt .text-zinc-500,
+  #printableReceipt .text-zinc-600 {
+    color: #000000 !important;
+  }
+  /* Background struk */
+  #printableReceipt .bg-neutral-100,
+  #printableReceipt .bg-white {
+    background-color: #ffffff !important;
+  }
+  /* Area tanda tangan lebih compact */
+  #printableReceipt .space-y-8 > * + * {
+    margin-top: 6mm !important;
+  }
+
+  /* Ketika mencetak tampilan akuntansi/umum (bukan modal receipt) */
   body:not(:has(#printableReceipt)) * {
     color: #000000 !important;
     background-color: transparent !important;
@@ -241,10 +331,11 @@ html.light ::-webkit-scrollbar-thumb:hover {
     border-collapse: collapse !important;
   }
 
-  body:not(:has(#printableReceipt)) th, 
+  body:not(:has(#printableReceipt)) th,
   body:not(:has(#printableReceipt)) td {
     border: 1px solid #e2e8f0 !important;
-    padding: 6px 8px !important;
+    padding: 4px 6px !important;
     color: #000000 !important;
   }
 }
+

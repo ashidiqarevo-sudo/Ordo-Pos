@@ -202,12 +202,15 @@ export async function signUpOwner(params: {
 
 /**
  * Masuk (Login) menggunakan Email dan Kata Sandi
+ * @param rememberMe - true: sesi tersimpan di localStorage (awet);
+ *                     false: sesi di sessionStorage (auto-logout saat tab ditutup)
  */
 export async function signInOwner(params: {
   email: string;
   password: string;
+  rememberMe?: boolean;
 }): Promise<{ user: AuthUser | null; error: string | null }> {
-  const { email, password } = params;
+  const { email, password, rememberMe = false } = params;
 
   // 1. Fallback jika Supabase belum terkonfigurasi di .env
   if (!isSupabaseConfigured()) {
@@ -244,8 +247,25 @@ export async function signInOwner(params: {
   }
 
   // 2. Login resmi ke Supabase Auth
+  // Jika rememberMe=false, buat client sementara dengan sessionStorage agar sesi
+  // otomatis hilang saat tab/browser ditutup
   try {
-    const { data, error } = await supabase.auth.signInWithPassword({
+    let authClient = supabase;
+    if (!rememberMe) {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+      authClient = createClient(supabaseUrl, supabaseAnonKey, {
+        auth: {
+          persistSession: true,
+          storage: window.sessionStorage,
+          autoRefreshToken: true,
+          detectSessionInUrl: false,
+        },
+      }) as typeof supabase;
+    }
+
+    const { data, error } = await authClient.auth.signInWithPassword({
       email: email.trim(),
       password,
     });

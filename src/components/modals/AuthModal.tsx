@@ -11,6 +11,7 @@ import {
   EyeOff,
   X,
   Sparkles,
+  ShieldCheck,
 } from 'lucide-react';
 import { signInOwner, signUpOwner } from '../../services/authService';
 
@@ -31,6 +32,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 }) => {
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -72,7 +74,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       setIsLoading(true);
       try {
-        const res = await signInOwner({ email: cleanEmail, password });
+        const res = await signInOwner({ email: cleanEmail, password, rememberMe });
         setIsLoading(false);
 
         if (res.error) {
@@ -152,7 +154,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </button>
           )}
           <h2 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
-            ORDO SERVIS HP
+            ORDO POS SERVICE
           </h2>
           <p className="text-xs text-slate-600 dark:text-zinc-400 mt-1">
             {mode === 'login'
@@ -276,6 +278,37 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Remember Me - hanya tampil di mode login */}
+          {mode === 'login' && (
+            <label className="flex items-center gap-2.5 cursor-pointer group select-none">
+              <div className="relative flex-shrink-0">
+                <input
+                  type="checkbox"
+                  id="rememberMe"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-4 h-4 rounded border border-slate-300 dark:border-zinc-600 bg-slate-50 dark:bg-zinc-800 peer-checked:bg-emerald-500 peer-checked:border-emerald-500 flex items-center justify-center transition-colors">
+                  {rememberMe && (
+                    <svg className="w-2.5 h-2.5 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </div>
+              </div>
+              <div className="flex-1">
+                <span className="text-xs font-semibold text-slate-700 dark:text-zinc-300">Ingat Saya</span>
+                <p className="text-[10px] text-slate-500 dark:text-zinc-500 mt-0.5">
+                  {rememberMe
+                    ? '✅ Sesi tersimpan permanen (Login otomatis saat buka browser)'
+                    : '🔒 Sesi terhapus otomatis saat tab/browser ditutup'}
+                </p>
+              </div>
+              <ShieldCheck className={`w-3.5 h-3.5 shrink-0 ${rememberMe ? 'text-emerald-500' : 'text-slate-400 dark:text-zinc-600'}`} />
+            </label>
+          )}
 
           {/* Submit Button */}
           <button

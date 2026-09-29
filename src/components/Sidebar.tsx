@@ -136,14 +136,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 leading-tight">
                 <span className="text-sm font-black tracking-wider text-white uppercase shrink-0">
-                  ORDO
+                  ORDO POS
                 </span>
                 <span className="text-emerald-500 font-bold text-xs">|</span>
                 <span
                   className="text-xs font-bold tracking-tight text-zinc-300 truncate"
                   title={storeSettings.storeName}
                 >
-                  {storeSettings.storeName || 'ORDO SERVIS HP'}
+                  {storeSettings.storeName || 'ORDO POS SERVICE'}
                 </span>
               </div>
               <p className="text-[11px] text-zinc-400 font-medium truncate mt-0.5">
@@ -227,10 +227,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 ? 'bg-emerald-500/10 text-emerald-400 font-bold'
                 : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
             }`}
-            title="Tentang Ordo V0"
+            title="Tentang Ordo POS Service"
           >
             <Compass className="w-4 h-4 shrink-0" />
-            <span className="hidden lg:inline">Tentang Ordo V0</span>
+            <span className="hidden lg:inline">Tentang Ordo POS Service</span>
           </button>
         </nav>
       </div>
