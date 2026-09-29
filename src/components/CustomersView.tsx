@@ -45,7 +45,7 @@ export const CustomersView: React.FC<CustomersViewProps> = ({
   const handleDirectWhatsApp = (customer: CustomerAggregated) => {
     let phone = customer.customerPhone.replace(/[^0-9]/g, '');
     if (phone.startsWith('0')) phone = '62' + phone.substring(1);
-    const text = encodeURIComponent(`Halo Kak ${customer.customerName}, salam dari teknisi kami 🙏`);
+    const text = encodeURIComponent(`Halo Kak ${customer.customerName}, salam dari teknisi kami.`);
     window.open(`https://wa.me/${phone}?text=${text}`, '_blank');
   };
 

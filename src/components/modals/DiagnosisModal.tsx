@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ServiceItem, StoreSettings } from '../../types';
-import { formatRupiah, formatNumberWithDots, parseNumberFromDots } from '../../data/initialData';
+import { formatRupiah, formatNumberWithDots, parseNumberFromDots, DEFAULT_STORE_SETTINGS } from '../../data/initialData';
 import {
   Stethoscope,
   X,
@@ -66,7 +66,7 @@ export const DiagnosisModal: React.FC<DiagnosisModalProps> = ({
   // Generate WA text
   const template =
     storeSettings.waDiagnosisMsg ||
-    'Halo Kak *{nama}*,\n\nUpdate dari *{toko}* mengenai pengecekan HP *{unit}* (Nota: *{nota}*):\n\n🛠️ *Hasil Diagnosis:*\n{diagnosis}\n\n💰 *Estimasi Biaya:* {biaya}\n• DP Masuk: {dp}\n• Estimasi Sisa: {sisa}\n\nApakah disetujui untuk kami lanjut kerjakan? Balas pesan ini ya Kak. Terima kasih! 🙏';
+    DEFAULT_STORE_SETTINGS.waDiagnosisMsg;
 
   const waText = template
     .replace(/{nama}/g, service.customerName)

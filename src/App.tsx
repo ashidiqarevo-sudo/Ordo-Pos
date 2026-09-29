@@ -161,7 +161,19 @@ export default function App() {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_SETTINGS);
       if (saved) {
-        return { ...DEFAULT_STORE_SETTINGS, ...JSON.parse(saved) };
+        const parsed = JSON.parse(saved);
+        // Jika template lama masih mengandung emoji, ganti dengan template baru yang bebas emoji
+        const hasEmoji = (str?: string) => str && /[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u.test(str);
+        return {
+          ...DEFAULT_STORE_SETTINGS,
+          ...parsed,
+          waIntakeMsg: hasEmoji(parsed.waIntakeMsg) ? DEFAULT_STORE_SETTINGS.waIntakeMsg : (parsed.waIntakeMsg || DEFAULT_STORE_SETTINGS.waIntakeMsg),
+          waDiagnosisMsg: hasEmoji(parsed.waDiagnosisMsg) ? DEFAULT_STORE_SETTINGS.waDiagnosisMsg : (parsed.waDiagnosisMsg || DEFAULT_STORE_SETTINGS.waDiagnosisMsg),
+          waReadyMsg: hasEmoji(parsed.waReadyMsg) ? DEFAULT_STORE_SETTINGS.waReadyMsg : (parsed.waReadyMsg || DEFAULT_STORE_SETTINGS.waReadyMsg),
+          waDoneMsg: hasEmoji(parsed.waDoneMsg) ? DEFAULT_STORE_SETTINGS.waDoneMsg : (parsed.waDoneMsg || DEFAULT_STORE_SETTINGS.waDoneMsg),
+          waCancelMsg: hasEmoji(parsed.waCancelMsg) ? DEFAULT_STORE_SETTINGS.waCancelMsg : (parsed.waCancelMsg || DEFAULT_STORE_SETTINGS.waCancelMsg),
+          waCancelPickupMsg: hasEmoji(parsed.waCancelPickupMsg) ? DEFAULT_STORE_SETTINGS.waCancelPickupMsg : (parsed.waCancelPickupMsg || DEFAULT_STORE_SETTINGS.waCancelPickupMsg),
+        };
       }
     } catch {
       // ignore
@@ -1041,7 +1053,7 @@ export default function App() {
     let phone = item.customerPhone.replace(/[^0-9]/g, '');
     if (phone.startsWith('0')) phone = '62' + phone.substring(1);
 
-    const msg = `Halo Bos *${item.customerName}*,\n\nKami dari *${storeSettings.storeName}* mau konfirmasi soal servis HP *${item.deviceModel}* (Nota: *${item.ticketNo}*).\n\nAda yang bisa kami bantu? Makasih ya Bos. 🙏`;
+    const msg = `Halo Bos *${item.customerName}*,\n\nKami dari *${storeSettings.storeName}* mau konfirmasi soal servis HP *${item.deviceModel}* (Nota: *${item.ticketNo}*).\n\nAda yang bisa kami bantu? Makasih ya Bos.`;
     window.open(
       `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`,
       '_blank'
@@ -1127,13 +1139,13 @@ export default function App() {
         msg = replacePlaceholders(
           storeSettings.waCancelPickupMsg ||
             DEFAULT_STORE_SETTINGS.waCancelPickupMsg ||
-            'Halo Kak *{nama}*,\n\nUnit HP *{unit}* (Nota: *{nota}*) yang dibatalkan servisnya (Alasan: {alasan}) telah diserahkan kembali kepada pemilik di *{toko}*.\n\n📋 *Rincian Serah Terima:*\n• Biaya Servis: Rp 0\n• Status: Sudah Diambil Kembali\n\nTerima kasih telah berkunjung ke *{toko}*. 🙏'
+            ''
         );
       } else {
         msg = replacePlaceholders(
           storeSettings.waCancelMsg ||
             DEFAULT_STORE_SETTINGS.waCancelMsg ||
-            'Halo Kak *{nama}*,\n\nServis HP *{unit}* (Nota: *{nota}*) di *{toko}* telah dibatalkan dengan alasan: {alasan}.\n\nUnit HP sudah siap dan dapat diambil kembali di konter kami ya Kak.\n• Biaya Servis: Rp 0\n\nTerima kasih! 🙏'
+            ''
         );
       }
     }

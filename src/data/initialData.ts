@@ -22,17 +22,17 @@ export const DEFAULT_STORE_SETTINGS: StoreSettings = {
   warrantyTerms:
     '1. Garansi cuma buat kerusakan atau sparepart yang sama.\n2. Segel konter jangan sampai sobek atau kena air.\n3. Bawa nota atau tunjukin chat WA ini pas mau klaim garansi.',
   waIntakeMsg:
-    'Halo Kak *{nama}*,\n\nTerima kasih telah mempercayakan servis HP di *{toko}*.\n\n📋 *Tanda Terima Servis (Nota: {nota})*\n• Unit: *{unit}*\n• Keluhan: {keluhan}\n• Estimasi Biaya: {biaya}\n• DP Masuk: {dp}\n• Sisa Estimasi: {sisa}\n\nKami akan segera cek dan kabari status servisnya. Simpan pesan ini sebagai bukti tanda terima. Terima kasih! 🙏',
+    'Halo Kak *{nama}*,\n\nTerima kasih sudah mempercayakan servis HP di *{toko}*.\nBerikut tanda terima penitipan unit Anda:\n\n[NOTA: {nota}]\n- Unit: *{unit}*\n- Keluhan: {keluhan}\n- Estimasi Biaya: {biaya}\n- DP: {dp}\n- Sisa Estimasi: {sisa}\n\nKami akan segera melakukan pengecekan/pengerjaan. Mohon simpan pesan ini sebagai bukti sah penitipan unit. Terima kasih.',
   waDiagnosisMsg:
-    'Halo Kak *{nama}*,\n\nUpdate dari *{toko}* mengenai pengecekan HP *{unit}* (Nota: *{nota}*):\n\n🛠️ *Hasil Diagnosis:*\n{diagnosis}\n\n💰 *Estimasi Biaya:* {biaya}\n• DP Masuk: {dp}\n• Estimasi Sisa: {sisa}\n\nApakah disetujui untuk kami lanjut kerjakan? Balas pesan ini ya Kak. Terima kasih! 🙏',
+    'Halo Kak *{nama}*,\n\nBerikut update hasil pengecekan untuk HP *{unit}* (Nota: {nota}):\n\n[Hasil Diagnosis & Tindakan]\n{diagnosis}\n\n[Total Biaya: {biaya}]\n(Dikurangi DP: {dp}, Sisa tagihan: {sisa})\n\nSilakan balas pesan ini dengan "LANJUT" jika setuju untuk kami kerjakan, atau "BATAL" jika tidak. Ditunggu konfirmasinya ya Kak. Terima kasih.',
   waReadyMsg:
-    'Halo Bos *{nama}*,\n\nKabar baik! HP *{unit}* (Nota: *{nota}*) udah beres diservis dan siap diambil di *{toko}* 🛠️.\n\n*Rincian Biaya:*\n• Total: {biaya}\n• DP: {dp}\n• *Sisa: {sisa}*\n\nDitunggu kedatangannya ya bos. Makasih banyak! 🙏',
+    'Halo Kak *{nama}*,\n\nKabar baik! Servis HP *{unit}* (Nota: {nota}) sudah SELESAI dan siap diambil di *{toko}*.\n\n[Rincian Biaya]\n- Total: {biaya}\n- DP Masuk: {dp}\n- *Sisa Pelunasan: {sisa}*\n\nSilakan tunjukkan pesan ini di konter saat pengambilan unit. Terima kasih.',
   waDoneMsg:
-    'Halo Bos *{nama}*,\n\nMakasih banyak ya udah servis di *{toko}*.\nHP *{unit}* (Nota: {nota}) udah diambil dan ada garansi toko selama *{garansi} Hari*.\n\nSimpen chat ini buat bukti garansi ya bos. Semoga HP-nya awet terus! ✨',
+    'Halo Kak *{nama}*,\n\nTerima kasih telah menggunakan jasa *{toko}*. Unit *{unit}* (Nota: {nota}) telah diserahkan kembali.\n\n[GARANSI TOKO: {garansi} Hari]\n\nSyarat Klaim Garansi:\n1. Berlaku untuk kerusakan/sparepart yang sama.\n2. Segel konter utuh, tidak jatuh, & tidak kena air.\n3. Wajib menunjukkan pesan ini sebagai bukti garansi.\n\nSemoga HP-nya awet selalu!',
   waCancelMsg:
-    'Halo Kak *{nama}*,\n\nServis HP *{unit}* (Nota: *{nota}*) di *{toko}* telah dibatalkan dengan alasan: {alasan}.\n\nUnit HP sudah siap dan dapat diambil kembali di konter kami ya Kak.\n• Biaya Servis: Rp 0\n\nTerima kasih! 🙏',
+    'Halo Kak *{nama}*,\n\nMohon maaf, proses servis HP *{unit}* (Nota: {nota}) terpaksa kami BATALKAN dengan alasan: {alasan}.\n\nUnit sudah dirakit kembali dan siap diambil di *{toko}*.\nBiaya Servis: Rp 0.\n\nSilakan ambil unit Anda kapan saja. Terima kasih atas pengertiannya.',
   waCancelPickupMsg:
-    'Halo Kak *{nama}*,\n\nUnit HP *{unit}* (Nota: *{nota}*) yang dibatalkan servisnya (Alasan: {alasan}) telah diserahkan kembali kepada pemilik di *{toko}*.\n\n📋 *Rincian Serah Terima:*\n• Biaya Servis: Rp 0\n• Status: Sudah Diambil Kembali\n\nTerima kasih telah berkunjung ke *{toko}*. 🙏',
+    'Halo Kak *{nama}*,\n\nUnit HP *{unit}* (Nota: {nota}) dengan status batal servis (Alasan: {alasan}) telah kami serahkan kembali.\n\nBiaya Servis: Rp 0.\n\nTerima kasih sudah berkunjung ke *{toko}*.',
 };
 
 export const INITIAL_SERVICES: ServiceItem[] = [
