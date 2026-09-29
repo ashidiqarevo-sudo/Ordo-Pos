@@ -1519,7 +1519,6 @@ export default function App() {
               onInstantPrint={handleInstantPrint}
               onDirectWhatsApp={handleDirectWhatsApp}
               onOpenServiceModal={() => setIsServiceModalOpen(true)}
-              onCancelService={handleCancelService}
             />
           )}
 

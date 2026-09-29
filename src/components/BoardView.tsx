@@ -12,7 +12,6 @@ import {
   Plus,
   Stethoscope,
   Clock,
-  XCircle,
 } from 'lucide-react';
 
 interface BoardViewProps {
@@ -26,7 +25,6 @@ interface BoardViewProps {
   onInstantPrint: (ticketId: string) => void;
   onDirectWhatsApp: (ticketId: string) => void;
   onOpenServiceModal: () => void;
-  onCancelService?: (ticketId: string, reason?: string) => void;
 }
 
 export const BoardView: React.FC<BoardViewProps> = ({
@@ -40,7 +38,6 @@ export const BoardView: React.FC<BoardViewProps> = ({
   onInstantPrint,
   onDirectWhatsApp,
   onOpenServiceModal,
-  onCancelService,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -273,27 +270,6 @@ export const BoardView: React.FC<BoardViewProps> = ({
                             <span>Sudah Jadi</span>
                           </button>
                         )}
-
-                        <button
-                          onClick={() => {
-                            const reason = window.prompt(
-                              `Batalkan servis untuk nota ${s.ticketNo} (${s.deviceModel})?\nMasukkan alasan pembatalan:`,
-                              'Dibatalkan oleh pelanggan'
-                            );
-                            if (reason !== null) {
-                              if (onCancelService) {
-                                onCancelService(s.id, reason.trim() || 'Dibatalkan oleh pelanggan');
-                              } else {
-                                onOpenReadyModal(s.id);
-                              }
-                            }
-                          }}
-                          title="Batalkan servis ini dan pindahkan ke Siap Diambil"
-                          className="px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer active:scale-95"
-                        >
-                          <XCircle className="w-3.5 h-3.5 text-rose-400" />
-                          <span>Batal</span>
-                        </button>
                       </div>
                     </td>
                   </tr>
