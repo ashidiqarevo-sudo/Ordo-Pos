@@ -20,6 +20,8 @@ import {
   CloudUpload,
   RefreshCw,
   Lock,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { LogoCropperModal } from './modals/LogoCropperModal';
 import { supabase } from '../lib/supabase';
@@ -68,6 +70,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [countdown, setCountdown] = useState(5);
   const [isLocalSyncing, setIsLocalSyncing] = useState(false);
   const [newPassword, setNewPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
@@ -910,18 +913,34 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
           <form onSubmit={handleUpdatePassword} className="space-y-2.5">
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-              <input
-                type="password"
-                value={newPassword}
-                onChange={(e) => {
-                  setNewPassword(e.target.value);
-                  if (passwordError) setPasswordError(null);
-                  if (passwordSuccess) setPasswordSuccess(null);
-                }}
-                placeholder="Ketik kata sandi baru..."
-                disabled={isUpdatingPassword}
-                className="flex-1 bg-zinc-950 border border-zinc-700 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:bg-black focus:border-emerald-500 focus:outline-none transition-colors"
-              />
+              <div className="relative flex-1">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={(e) => {
+                    setNewPassword(e.target.value);
+                    if (passwordError) setPasswordError(null);
+                    if (passwordSuccess) setPasswordSuccess(null);
+                  }}
+                  placeholder="Ketik kata sandi baru..."
+                  disabled={isUpdatingPassword}
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-white placeholder-zinc-500 focus:bg-black focus:border-emerald-500 focus:outline-none transition-colors"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  disabled={isUpdatingPassword}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white transition-colors cursor-pointer p-0.5"
+                  title={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
+                  aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
               <button
                 type="submit"
                 disabled={isUpdatingPassword || !newPassword.trim()}
