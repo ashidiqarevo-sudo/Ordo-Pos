@@ -911,11 +911,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   {currentUser?.email || formData.storePhone || 'Akun Administrator Konter'}
                 </p>
                 <p className="text-xs text-zinc-400 font-mono truncate">
-                  {currentUser?.email
-                    ? `@${currentUser.email.split('@')[0]}`
-                    : currentUser?.storeUsername
-                    ? `@${currentUser.storeUsername}`
-                    : '@ondo-phone'}
+                  {(() => {
+                    const prefix = currentUser?.email
+                      ? currentUser.email.split('@')[0]
+                      : currentUser?.storeUsername || formData.storeUsername || 'ondo-phone';
+                    const phoneSuffix = (formData.storePhone || currentUser?.storeId || '').replace(/\D/g, '').slice(-5);
+                    const suffix = phoneSuffix || (currentUser?.storeUsername?.slice(-5)) || '00001';
+                    return `@${prefix}-${suffix}`;
+                  })()}
                 </p>
               </div>
             </div>
