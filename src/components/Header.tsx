@@ -303,14 +303,14 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             {/* Avatar / Foto Logo */}
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-slate-100 dark:bg-zinc-800 border-2 border-slate-300 dark:border-zinc-700 group-hover:border-emerald-500 flex items-center justify-center text-emerald-600 dark:text-emerald-400 group-hover:text-emerald-600 dark:group-hover:text-white group-hover:bg-emerald-500/10 dark:group-hover:bg-emerald-500/20 transition-all shadow-inner overflow-hidden shrink-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-black border-2 border-slate-300 dark:border-zinc-700 group-hover:border-emerald-500 flex items-center justify-center text-emerald-600 dark:text-emerald-400 group-hover:text-emerald-600 dark:group-hover:text-white group-hover:bg-emerald-500/10 dark:group-hover:bg-emerald-500/20 transition-all shadow-inner overflow-hidden shrink-0">
               {/* Layar Komputer / Desktop (>= lg): Tampilkan Foto Logo Toko */}
               <div className="hidden lg:block w-full h-full">
                 {storeSettings.logoUrl ? (
                   <img
                     src={storeSettings.logoUrl}
                     alt={storeSettings.storeName || 'Logo'}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover bg-black rounded-xl"
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center">

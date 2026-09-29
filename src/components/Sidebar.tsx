@@ -114,15 +114,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {/* Compact Logo Mark (< lg) - Tablet & HP: Menampilkan foto logo toko yang diunggah */}
           <div className="flex lg:hidden flex-col items-center justify-center">
             {storeSettings.logoUrl ? (
-              <div className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 rounded-xl overflow-hidden border border-zinc-700/80 bg-zinc-900 flex items-center justify-center shadow-md group-hover:scale-105 transition-transform shrink-0">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 rounded-xl overflow-hidden border border-zinc-700/80 bg-black flex items-center justify-center shadow-md group-hover:scale-105 transition-transform shrink-0">
                 <img
                   src={storeSettings.logoUrl}
                   alt={storeSettings.storeName || 'Logo Toko'}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover bg-black rounded-xl"
                 />
               </div>
             ) : (
-              <div className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 rounded-xl bg-zinc-900 border border-zinc-700/80 flex items-center justify-center shadow-md group-hover:scale-105 transition-transform shrink-0 p-1.5 text-white">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 rounded-xl bg-black border border-zinc-700/80 flex items-center justify-center shadow-md group-hover:scale-105 transition-transform shrink-0 p-1.5 text-white">
                 <OrdoLogo className="w-full h-full" />
               </div>
             )}
@@ -133,6 +133,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* Expanded Brand (>= lg) */}
           <div className="hidden lg:flex items-center gap-2.5 min-w-0 flex-1">
+            {storeSettings.logoUrl ? (
+              <div className="w-9 h-9 rounded-xl overflow-hidden border border-zinc-700/80 bg-black flex items-center justify-center shadow-md shrink-0">
+                <img
+                  src={storeSettings.logoUrl}
+                  alt={storeSettings.storeName || 'Logo Toko'}
+                  className="w-full h-full object-cover bg-black rounded-xl"
+                />
+              </div>
+            ) : (
+              <div className="w-9 h-9 rounded-xl bg-black border border-zinc-700/80 flex items-center justify-center shadow-md shrink-0 p-1.5 text-white">
+                <OrdoLogo className="w-full h-full" />
+              </div>
+            )}
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 leading-tight">
                 <span className="text-sm font-black tracking-wider text-white uppercase shrink-0">

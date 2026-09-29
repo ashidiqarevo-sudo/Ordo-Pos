@@ -323,12 +323,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           {/* Upload Logo Toko */}
           <div className="bg-zinc-950/70 border border-zinc-800 rounded-lg p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="relative w-16 h-16 rounded-full bg-zinc-900 border-2 border-emerald-500/50 flex items-center justify-center overflow-hidden shrink-0 shadow-inner group">
+              <div className="relative w-16 h-16 rounded-2xl bg-black border-2 border-emerald-500/50 flex items-center justify-center overflow-hidden shrink-0 shadow-inner group">
                 {formData.logoUrl ? (
                   <img
                     src={formData.logoUrl}
                     alt="Logo Toko"
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover bg-black rounded-2xl"
                   />
                 ) : (
                   <div className="flex flex-col items-center justify-center text-zinc-500">
