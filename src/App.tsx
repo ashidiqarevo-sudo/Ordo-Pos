@@ -1028,6 +1028,13 @@ export default function App() {
       })
     );
     addToast('HP berhasil dikembalikan ke Servis Berjalan!', 'info');
+
+    // Sinkronkan perubahan status ke Supabase (non-blocking)
+    if (currentUser?.storeId) {
+      updateServiceStatus(ticketId, currentUser.storeId, 'BARU').catch((err) =>
+        console.error('[App] updateServiceStatus (handleReopenTicket) error:', err)
+      );
+    }
   };
 
   // Handlers: WhatsApp direct chat
@@ -1410,6 +1417,22 @@ export default function App() {
     [services, cashEntries]
   );
 
+  // ── SECURITY GATE 1: Auth Loading ──────────────────────────────────────────
+  // Selama Supabase masih memverifikasi sesi (token refresh, INITIAL_SESSION),
+  // tampilkan loading screen untuk mencegah flash of unauthenticated content.
+  // Ini juga memblokir upaya bypass URL langsung ke /dashboard saat token belum terverifikasi.
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-white dark:bg-zinc-950">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs text-zinc-400 dark:text-zinc-500">Memverifikasi sesi...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── SECURITY GATE 2: Unauthenticated User ──────────────────────────────────
   // Jika sedang di landing page ATAU belum login, tampilkan Landing Page
   if (currentView === 'landing' || !currentUser) {
     return (
