@@ -1,6 +1,7 @@
 import { ServiceItem, StoreSettings } from '../types';
 
 export const PRESET_COMPLAINTS: string[] = [
+  'Tombol',
   'LCD / Layar',
   'Baterai',
   'Cas',
