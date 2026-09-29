@@ -307,29 +307,29 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </div>
           </div>
 
-          {/* Specific Terms based on Receipt Type (Compact & Smaller Font) */}
+          {/* Specific Terms based on Receipt Type (Ultra-Compact) */}
           {isBatal ? (
-            <div className="py-1.5 space-y-0.5 text-[9px] leading-tight text-neutral-600 border-b border-dashed border-neutral-400">
-              <p className="font-bold text-black text-[10px]">Ketentuan Pengembalian Unit (Batal Servis):</p>
-              <p>• Unit HP diserahkan kembali dalam kondisi apa adanya sesuai saat masuk/dibatalkan.</p>
-              <p>• Tidak ada tagihan biaya servis untuk perbaikan yang dibatalkan.</p>
+            <div className="py-1 text-[8px] leading-none text-neutral-600 border-b border-dashed border-neutral-400">
+              <p className="font-bold text-black text-[8.5px] pb-0.5">Ketentuan Pengembalian Unit (Batal Servis):</p>
+              <p className="leading-tight">• Unit HP diserahkan kembali dalam kondisi apa adanya sesuai saat masuk/dibatalkan.</p>
+              <p className="leading-tight">• Tidak ada tagihan biaya servis untuk perbaikan yang dibatalkan.</p>
             </div>
           ) : receiptType === 'INTAKE' ? (
-            <div className="py-1.5 space-y-0.5 text-[9px] leading-tight text-neutral-600 border-b border-dashed border-neutral-400">
-              <p className="font-bold text-black text-[10px]">Ketentuan Penitipan Unit:</p>
-              <p>• Nota ini adalah bukti sah serah terima dan pengambilan HP.</p>
-              <p>• Konter tidak bertanggung jawab atas data di memori internal HP.</p>
-              <p>• Unit yang tidak diambil &gt; 30 hari di luar tanggung jawab konter.</p>
+            <div className="py-1 text-[8px] leading-none text-neutral-600 border-b border-dashed border-neutral-400">
+              <p className="font-bold text-black text-[8.5px] pb-0.5">Ketentuan Penitipan Unit:</p>
+              <p className="leading-tight">• Nota ini adalah bukti sah serah terima dan pengambilan HP.</p>
+              <p className="leading-tight">• Konter tidak bertanggung jawab atas data di memori internal HP.</p>
+              <p className="leading-tight">• Unit yang tidak diambil &gt; 30 hari di luar tanggung jawab konter.</p>
             </div>
           ) : (
-            <div className="py-1.5 space-y-0.5 text-[9px] leading-tight text-neutral-600 border-b border-dashed border-neutral-400">
-              <p className="font-bold text-black text-[10px]">Syarat & Ketentuan Garansi:</p>
+            <div className="py-1 text-[8px] leading-none text-neutral-600 border-b border-dashed border-neutral-400">
+              <p className="font-bold text-black text-[8.5px] pb-0.5">Syarat & Ketentuan Garansi:</p>
               {storeSettings.warrantyTerms
                 ? storeSettings.warrantyTerms.split('\n').filter(Boolean).map((line, idx) => (
-                    <p key={idx}>• {line.trim().replace(/^[-*•\d.]+\s*/, '')}</p>
+                    <p key={idx} className="leading-tight">• {line.trim().replace(/^[-*•\d.]+\s*/, '')}</p>
                   ))
                 : (
-                  <p>• Garansi berlaku untuk sparepart & kerusakan yang sama dengan menunjukkan nota ini.</p>
+                  <p className="leading-tight">• Garansi berlaku untuk sparepart & kerusakan yang sama dengan menunjukkan nota ini.</p>
                 )}
             </div>
           )}
@@ -355,7 +355,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           )}
 
           {receiptType === 'INTAKE' && (
-            <div className="text-center pt-1 text-[10px] text-neutral-600 font-medium">
+            <div className="text-center pt-0.5 text-[8px] text-neutral-500 font-medium leading-tight">
               Terima kasih telah mempercayakan servis HP Anda di {storeSettings.storeName || 'konter kami'}.
             </div>
           )}
