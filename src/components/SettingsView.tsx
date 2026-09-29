@@ -910,16 +910,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <p className="text-sm text-zinc-300 font-medium break-all">
                   {currentUser?.email || formData.storePhone || 'Akun Administrator Konter'}
                 </p>
-                <p className="text-xs text-zinc-400 font-mono truncate">
-                  {(() => {
-                    const prefix = currentUser?.email
-                      ? currentUser.email.split('@')[0]
-                      : currentUser?.storeUsername || formData.storeUsername || 'ondo-phone';
-                    const phoneSuffix = (formData.storePhone || currentUser?.storeId || '').replace(/\D/g, '').slice(-5);
-                    const suffix = phoneSuffix || (currentUser?.storeUsername?.slice(-5)) || '00001';
-                    return `@${prefix}-${suffix}`;
-                  })()}
-                </p>
               </div>
             </div>
           </div>
@@ -931,7 +921,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <h4 className="text-xs font-bold text-white">Ganti Kata Sandi</h4>
             </div>
             <div className="space-y-3">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                 {/* Kolom Input & Ikon Mata */}
                 <div className="relative flex-1 min-w-0">
                   <input
@@ -955,12 +945,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </button>
                 </div>
 
-                {/* Tombol Simpan di Kanan */}
+                {/* Tombol Simpan — penuh di mobile, auto di desktop */}
                 <button
                   type="button"
                   onClick={handleUpdatePassword}
                   disabled={isUpdatingPassword}
-                  className="h-[38px] px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold flex items-center justify-center gap-2 shrink-0 transition-colors disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                  className="w-full sm:w-auto py-2 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold flex items-center justify-center gap-2 shrink-0 transition-colors disabled:opacity-50 cursor-pointer whitespace-nowrap"
                 >
                   <Save size={16} />
                   {isUpdatingPassword ? "Menyimpan..." : "Simpan Sandi Baru"}
