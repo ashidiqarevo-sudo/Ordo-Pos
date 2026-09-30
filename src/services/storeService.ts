@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { StoreSettings } from '../types';
+import { DEFAULT_STORE_SETTINGS } from '../data/initialData';
 
 // ==============================================================================
 // UPLOAD LOGO: Base64 cropped → Supabase Storage → Public URL
@@ -52,7 +53,6 @@ export async function uploadStoreLogo(
 
     if (uploadError) {
       console.error('[storeService] Gagal upload logo:', uploadError);
-      // Fallback darurat: simpan Base64 jika storage gagal
       return { publicUrl: base64, error: uploadError.message };
     }
 
@@ -65,8 +65,105 @@ export async function uploadStoreLogo(
     return { publicUrl, error: null };
   } catch (err: any) {
     console.error('[storeService] Error uploadStoreLogo:', err);
-    // Fallback darurat: kembalikan Base64
     return { publicUrl: base64, error: err?.message || 'Upload gagal' };
+  }
+}
+
+// ==============================================================================
+// FETCH FULL STORE SETTINGS: Ambil seluruh pengaturan toko langsung dari Supabase
+// ==============================================================================
+
+export interface FullStoreSettingsResult {
+  settings: StoreSettings;
+  theme: 'dark' | 'light';
+  hasCompletedOnboarding: boolean;
+  hasCompletedStoreSetup: boolean;
+}
+
+/**
+ * Mengambil seluruh data pengaturan toko dari Supabase:
+ * 1. Tabel `stores` (nama, slug, slogan, alamat, nomor telp, logo, garansi, tema, status setup)
+ * 2. Tabel `profiles` (nama pemilik konter dari owner_id)
+ * 3. Tabel `store_whatsapp_templates` (ke-6 template pesan WA dinamis)
+ */
+export async function fetchFullStoreSettings(
+  storeId: string
+): Promise<FullStoreSettingsResult | null> {
+  if (!isSupabaseConfigured() || !storeId) {
+    return null;
+  }
+
+  try {
+    // 1. Fetch data toko
+    const { data: store, error: storeErr } = await supabase
+      .from('stores')
+      .select('*')
+      .eq('id', storeId)
+      .maybeSingle();
+
+    if (storeErr || !store) {
+      console.error('[storeService] Gagal memuat data toko dari Supabase:', storeErr);
+      return null;
+    }
+
+    // 2. Fetch nama pemilik dari tabel profiles jika ada owner_id
+    let ownerName = DEFAULT_STORE_SETTINGS.ownerName;
+    if (store.owner_id) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', store.owner_id)
+        .maybeSingle();
+      if (profile?.full_name?.trim()) {
+        ownerName = profile.full_name.trim();
+      }
+    }
+
+    // 3. Fetch template WhatsApp dari tabel store_whatsapp_templates
+    const { data: waTemplate } = await supabase
+      .from('store_whatsapp_templates')
+      .select('*')
+      .eq('store_id', storeId)
+      .maybeSingle();
+
+    // Helper sanitasi emoji jika data lama masih mengandung emoji
+    const cleanEmoji = (str?: string | null) => {
+      if (!str) return undefined;
+      const hasEmoji = /[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u.test(str);
+      return hasEmoji ? undefined : str;
+    };
+
+    const settings: StoreSettings = {
+      storeName: store.name || DEFAULT_STORE_SETTINGS.storeName,
+      storeUsername: store.username || DEFAULT_STORE_SETTINGS.storeUsername,
+      ownerName: ownerName,
+      storeTagline: store.tagline || DEFAULT_STORE_SETTINGS.storeTagline,
+      storeAddress: store.address || DEFAULT_STORE_SETTINGS.storeAddress,
+      storePhone: store.phone || DEFAULT_STORE_SETTINGS.storePhone,
+      defaultWarrantyDays: store.default_warranty_days || DEFAULT_STORE_SETTINGS.defaultWarrantyDays,
+      warrantyTerms: store.warranty_terms || DEFAULT_STORE_SETTINGS.warrantyTerms,
+      logoUrl: store.logo_url || undefined,
+      waIntakeMsg: cleanEmoji(waTemplate?.wa_intake_msg) || DEFAULT_STORE_SETTINGS.waIntakeMsg,
+      waDiagnosisMsg: cleanEmoji(waTemplate?.wa_diagnosis_msg) || DEFAULT_STORE_SETTINGS.waDiagnosisMsg,
+      waReadyMsg: cleanEmoji(waTemplate?.wa_ready_msg) || DEFAULT_STORE_SETTINGS.waReadyMsg,
+      waDoneMsg: cleanEmoji(waTemplate?.wa_done_msg) || DEFAULT_STORE_SETTINGS.waDoneMsg,
+      waCancelMsg: cleanEmoji(waTemplate?.wa_cancel_msg) || DEFAULT_STORE_SETTINGS.waCancelMsg,
+      waCancelPickupMsg: cleanEmoji(waTemplate?.wa_cancel_pickup_msg) || DEFAULT_STORE_SETTINGS.waCancelPickupMsg,
+    };
+
+    const theme: 'dark' | 'light' = store.theme_preference === 'light' ? 'light' : 'dark';
+    const hasCompletedOnboarding = Boolean(store.has_completed_onboarding);
+    const hasCompletedStoreSetup = Boolean(store.has_completed_store_setup);
+
+    return {
+      settings,
+      theme,
+      hasCompletedOnboarding,
+      hasCompletedStoreSetup,
+    };
+  } catch (err) {
+    console.error('[storeService] Error fetchFullStoreSettings:', err);
+    return null;
   }
 }
 
@@ -78,13 +175,11 @@ export async function uploadStoreLogo(
  * Memperbarui kolom-kolom profil di tabel `stores`.
  * Kolom yang diupdate: store_name, owner_name, tagline, address, phone,
  * default_warranty_days, warranty_terms, logo_url.
- *
- * Tidak menyentuh kolom username/storeId.
  */
 export async function updateStoreProfile(params: {
   storeId: string;
   settings: StoreSettings;
-}): Promise<{ success: boolean; error: string | null }> {
+}): Promise<{ success: boolean; data?: Partial<StoreSettings>; error: string | null }> {
   const { storeId, settings } = params;
 
   if (!isSupabaseConfigured() || !storeId) {
@@ -92,7 +187,7 @@ export async function updateStoreProfile(params: {
   }
 
   try {
-    const { error } = await supabase
+    const { data: updatedStore, error } = await supabase
       .from('stores')
       .update({
         name: settings.storeName?.trim() || 'ORDO SERVIS HP',
@@ -101,26 +196,27 @@ export async function updateStoreProfile(params: {
         phone: settings.storePhone?.trim() || '',
         default_warranty_days: String(settings.defaultWarrantyDays || '14'),
         warranty_terms: settings.warrantyTerms?.trim() || '',
-        // Simpan logo_url hanya jika bukan Base64 (URL permanen dari storage)
-        // Jika masih Base64 (fallback offline), tetap simpan apa adanya
         logo_url: settings.logoUrl ?? null,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', storeId);
+      .eq('id', storeId)
+      .select('*')
+      .single();
 
     if (error) {
-      console.error('[storeService] Gagal update profil toko:', error);
+      console.error('[storeService] Gagal update profil toko di Supabase:', error);
       return { success: false, error: error.message };
     }
 
-    if (settings.ownerName?.trim()) {
+    const ownerName = settings.ownerName?.trim();
+    if (ownerName) {
       try {
         const { data: userData } = await supabase.auth.getUser();
         if (userData?.user?.id) {
           await supabase
             .from('profiles')
             .update({
-              full_name: settings.ownerName.trim(),
+              full_name: ownerName,
               updated_at: new Date().toISOString(),
             })
             .eq('id', userData.user.id);
@@ -130,7 +226,20 @@ export async function updateStoreProfile(params: {
       }
     }
 
-    return { success: true, error: null };
+    return {
+      success: true,
+      data: {
+        storeName: updatedStore.name,
+        storeTagline: updatedStore.tagline,
+        storeAddress: updatedStore.address,
+        storePhone: updatedStore.phone,
+        defaultWarrantyDays: updatedStore.default_warranty_days,
+        warrantyTerms: updatedStore.warranty_terms,
+        logoUrl: updatedStore.logo_url || undefined,
+        ownerName: ownerName || undefined,
+      },
+      error: null,
+    };
   } catch (err: any) {
     console.error('[storeService] Error updateStoreProfile:', err);
     return { success: false, error: err?.message || 'Gagal menyimpan profil toko' };
@@ -143,21 +252,12 @@ export async function updateStoreProfile(params: {
 
 /**
  * Memperbarui (UPSERT) semua template pesan WhatsApp milik toko di tabel
- * `store_whatsapp_templates`. Menggunakan ON CONFLICT (store_id) DO UPDATE
- * via metode upsert Supabase.
- *
- * Template yang disinkronkan:
- * - wa_intake_msg    → template notifikasi masuk HP
- * - wa_diagnosis_msg → template konfirmasi estimasi biaya
- * - wa_ready_msg     → template pemberitahuan HP siap diambil
- * - wa_done_msg      → template bukti serah terima selesai
- * - wa_cancel_msg    → template servis dibatalkan (belum diambil)
- * - wa_cancel_pickup_msg → template HP batal sudah diserahkan
+ * `store_whatsapp_templates`. Menggunakan ON CONFLICT (store_id) DO UPDATE.
  */
 export async function updateWhatsAppTemplates(params: {
   storeId: string;
   settings: StoreSettings;
-}): Promise<{ success: boolean; error: string | null }> {
+}): Promise<{ success: boolean; data?: Partial<StoreSettings>; error: string | null }> {
   const { storeId, settings } = params;
 
   if (!isSupabaseConfigured() || !storeId) {
@@ -165,7 +265,7 @@ export async function updateWhatsAppTemplates(params: {
   }
 
   try {
-    const { error } = await supabase
+    const { data: updatedTemplate, error } = await supabase
       .from('store_whatsapp_templates')
       .upsert(
         {
@@ -179,17 +279,112 @@ export async function updateWhatsAppTemplates(params: {
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'store_id' }
-      );
+      )
+      .select('*')
+      .single();
 
     if (error) {
-      console.error('[storeService] Gagal update template WA:', error);
+      console.error('[storeService] Gagal update template WA di Supabase:', error);
+      return { success: false, error: error.message };
+    }
+
+    return {
+      success: true,
+      data: {
+        waIntakeMsg: updatedTemplate.wa_intake_msg || undefined,
+        waDiagnosisMsg: updatedTemplate.wa_diagnosis_msg || undefined,
+        waReadyMsg: updatedTemplate.wa_ready_msg || undefined,
+        waDoneMsg: updatedTemplate.wa_done_msg || undefined,
+        waCancelMsg: updatedTemplate.wa_cancel_msg || undefined,
+        waCancelPickupMsg: updatedTemplate.wa_cancel_pickup_msg || undefined,
+      },
+      error: null,
+    };
+  } catch (err: any) {
+    console.error('[storeService] Error updateWhatsAppTemplates:', err);
+    return { success: false, error: err?.message || 'Gagal menyimpan template WA' };
+  }
+}
+
+// ==============================================================================
+// UPDATE THEME PREFERENCE: Simpan mode tema (dark/light) ke kolom `stores.theme_preference`
+// ==============================================================================
+
+/**
+ * Memperbarui preferensi mode tema toko (dark / light) langsung di database Supabase.
+ */
+export async function updateStoreTheme(
+  storeId: string,
+  theme: 'dark' | 'light'
+): Promise<{ success: boolean; error: string | null }> {
+  if (!isSupabaseConfigured() || !storeId) {
+    return { success: true, error: null };
+  }
+
+  try {
+    const { error } = await supabase
+      .from('stores')
+      .update({
+        theme_preference: theme,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', storeId);
+
+    if (error) {
+      console.error('[storeService] Gagal update preferensi tema di Supabase:', error);
       return { success: false, error: error.message };
     }
 
     return { success: true, error: null };
   } catch (err: any) {
-    console.error('[storeService] Error updateWhatsAppTemplates:', err);
-    return { success: false, error: err?.message || 'Gagal menyimpan template WA' };
+    console.error('[storeService] Error updateStoreTheme:', err);
+    return { success: false, error: err?.message || 'Gagal menyimpan tema' };
+  }
+}
+
+// ==============================================================================
+// UPDATE ONBOARDING / SETUP STATUS: Simpan status wizard ke kolom `stores`
+// ==============================================================================
+
+/**
+ * Memperbarui status selesai onboarding atau store setup di database Supabase.
+ */
+export async function updateStoreOnboardingStatus(
+  storeId: string,
+  status: {
+    hasCompletedOnboarding?: boolean;
+    hasCompletedStoreSetup?: boolean;
+  }
+): Promise<{ success: boolean; error: string | null }> {
+  if (!isSupabaseConfigured() || !storeId) {
+    return { success: true, error: null };
+  }
+
+  try {
+    const updatePayload: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (typeof status.hasCompletedOnboarding === 'boolean') {
+      updatePayload.has_completed_onboarding = status.hasCompletedOnboarding;
+    }
+    if (typeof status.hasCompletedStoreSetup === 'boolean') {
+      updatePayload.has_completed_store_setup = status.hasCompletedStoreSetup;
+    }
+
+    const { error } = await supabase
+      .from('stores')
+      .update(updatePayload)
+      .eq('id', storeId);
+
+    if (error) {
+      console.error('[storeService] Gagal update status setup/onboarding di Supabase:', error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, error: null };
+  } catch (err: any) {
+    console.error('[storeService] Error updateStoreOnboardingStatus:', err);
+    return { success: false, error: err?.message || 'Gagal update status setup' };
   }
 }
 
@@ -199,30 +394,43 @@ export async function updateWhatsAppTemplates(params: {
 
 /**
  * Helper yang memanggil updateStoreProfile + updateWhatsAppTemplates secara paralel.
- * Digunakan oleh App.tsx agar satu panggilan saja yang diperlukan dari handler.
+ * Mengembalikan objek StoreSettings yang telah tersinkronisasi dari respons database Supabase.
  */
 export async function saveAllStoreSettings(params: {
   storeId: string;
   settings: StoreSettings;
-}): Promise<{ success: boolean; errors: string[] }> {
+}): Promise<{ success: boolean; updatedSettings?: StoreSettings; errors: string[] }> {
   const [profileResult, templateResult] = await Promise.allSettled([
     updateStoreProfile(params),
     updateWhatsAppTemplates(params),
   ]);
 
   const errors: string[] = [];
+  let mergedSettings: StoreSettings = { ...params.settings };
 
-  if (profileResult.status === 'fulfilled' && !profileResult.value.success) {
-    if (profileResult.value.error) errors.push(profileResult.value.error);
-  } else if (profileResult.status === 'rejected') {
-    errors.push('Gagal simpan profil toko');
+  if (profileResult.status === 'fulfilled') {
+    if (profileResult.value.success && profileResult.value.data) {
+      mergedSettings = { ...mergedSettings, ...profileResult.value.data };
+    } else if (!profileResult.value.success && profileResult.value.error) {
+      errors.push(profileResult.value.error);
+    }
+  } else {
+    errors.push('Gagal menyimpan profil toko ke Cloud');
   }
 
-  if (templateResult.status === 'fulfilled' && !templateResult.value.success) {
-    if (templateResult.value.error) errors.push(templateResult.value.error);
-  } else if (templateResult.status === 'rejected') {
-    errors.push('Gagal simpan template WA');
+  if (templateResult.status === 'fulfilled') {
+    if (templateResult.value.success && templateResult.value.data) {
+      mergedSettings = { ...mergedSettings, ...templateResult.value.data };
+    } else if (!templateResult.value.success && templateResult.value.error) {
+      errors.push(templateResult.value.error);
+    }
+  } else {
+    errors.push('Gagal menyimpan template WhatsApp ke Cloud');
   }
 
-  return { success: errors.length === 0, errors };
+  return {
+    success: errors.length === 0,
+    updatedSettings: mergedSettings,
+    errors,
+  };
 }

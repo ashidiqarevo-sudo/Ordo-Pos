@@ -62,28 +62,19 @@ import {
 import {
   saveAllStoreSettings,
   uploadStoreLogo,
+  fetchFullStoreSettings,
+  updateStoreTheme,
+  updateStoreOnboardingStatus,
 } from './services/storeService';
 import { syncLocalDataToSupabase } from './services/migrationService';
 
+// Kunci local storage HANYA untuk cache offline data operasional transaksi (layanan & kas)
 const STORAGE_KEY_SERVICES = 'ordo_servis_services_v6';
-const STORAGE_KEY_SETTINGS = 'ordo_servis_settings_v4';
 const STORAGE_KEY_CASH_ENTRIES = 'ordo_servis_cash_entries_v2';
-const STORAGE_KEY_THEME = 'ordo_servis_theme_v4';
-const STORAGE_KEY_AUTH = 'ordo_servis_auth_user_v4';
-const STORAGE_KEY_ONBOARDING_DONE = 'ordo_servis_onboarding_done_v4';
-const STORAGE_KEY_STORE_SETUP_DONE = 'ordo_servis_store_setup_done_v4';
 
 export default function App() {
-  // Theme state: default to 'light', persisted to localStorage
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_THEME);
-      if (saved === 'dark' || saved === 'light') return saved;
-    } catch {
-      // ignore
-    }
-    return 'light';
-  });
+  // Theme state: in-memory state, disinkronkan langsung dengan kolom stores.theme_preference di Supabase
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
 
   const applyThemeToDOM = (t: 'dark' | 'light') => {
     const root = document.documentElement;
@@ -106,11 +97,6 @@ export default function App() {
   };
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_THEME, theme);
-    } catch {
-      // ignore
-    }
     applyThemeToDOM(theme);
   }, [theme]);
 
@@ -123,6 +109,12 @@ export default function App() {
         : 'Mode Terang (Clean Light) aktif',
       'info'
     );
+    // Cloud Sync: Simpan preferensi tema langsung ke Supabase
+    if (currentUser?.storeId) {
+      updateStoreTheme(currentUser.storeId, newTheme).catch((err) =>
+        console.error('[App] updateStoreTheme error:', err)
+      );
+    }
   };
 
   // Local storage state
@@ -157,29 +149,9 @@ export default function App() {
     return [];
   });
 
-  const [storeSettings, setStoreSettings] = useState<StoreSettings>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_SETTINGS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Jika template lama masih mengandung emoji, ganti dengan template baru yang bebas emoji
-        const hasEmoji = (str?: string) => str && /[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u.test(str);
-        return {
-          ...DEFAULT_STORE_SETTINGS,
-          ...parsed,
-          waIntakeMsg: hasEmoji(parsed.waIntakeMsg) ? DEFAULT_STORE_SETTINGS.waIntakeMsg : (parsed.waIntakeMsg || DEFAULT_STORE_SETTINGS.waIntakeMsg),
-          waDiagnosisMsg: hasEmoji(parsed.waDiagnosisMsg) ? DEFAULT_STORE_SETTINGS.waDiagnosisMsg : (parsed.waDiagnosisMsg || DEFAULT_STORE_SETTINGS.waDiagnosisMsg),
-          waReadyMsg: hasEmoji(parsed.waReadyMsg) ? DEFAULT_STORE_SETTINGS.waReadyMsg : (parsed.waReadyMsg || DEFAULT_STORE_SETTINGS.waReadyMsg),
-          waDoneMsg: hasEmoji(parsed.waDoneMsg) ? DEFAULT_STORE_SETTINGS.waDoneMsg : (parsed.waDoneMsg || DEFAULT_STORE_SETTINGS.waDoneMsg),
-          waCancelMsg: hasEmoji(parsed.waCancelMsg) ? DEFAULT_STORE_SETTINGS.waCancelMsg : (parsed.waCancelMsg || DEFAULT_STORE_SETTINGS.waCancelMsg),
-          waCancelPickupMsg: hasEmoji(parsed.waCancelPickupMsg) ? DEFAULT_STORE_SETTINGS.waCancelPickupMsg : (parsed.waCancelPickupMsg || DEFAULT_STORE_SETTINGS.waCancelPickupMsg),
-        };
-      }
-    } catch {
-      // ignore
-    }
-    return DEFAULT_STORE_SETTINGS;
-  });
+  // Store Settings State: Inisialisasi in-memory dengan DEFAULT_STORE_SETTINGS.
+  // 100% cloud-synced: saat user login, di-fetch langsung dari Supabase tanpa localStorage.
+  const [storeSettings, setStoreSettings] = useState<StoreSettings>(DEFAULT_STORE_SETTINGS);
 
   const [cashEntries, setCashEntries] = useState<CashEntry[]>(() => {
     try {
@@ -195,7 +167,7 @@ export default function App() {
     return [];
   });
 
-  // Persist to localStorage
+  // Persist to localStorage untuk transaksi offline
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_SERVICES, JSON.stringify(services));
@@ -203,14 +175,6 @@ export default function App() {
       // ignore
     }
   }, [services]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(storeSettings));
-    } catch {
-      // ignore
-    }
-  }, [storeSettings]);
 
   useEffect(() => {
     try {
@@ -294,6 +258,11 @@ export default function App() {
 
         if (event === 'SIGNED_OUT' || !session?.user) {
           setCurrentUser(null);
+          setStoreSettings(DEFAULT_STORE_SETTINGS);
+          setTheme('dark');
+          applyThemeToDOM('dark');
+          setIsStoreSetupDone(false);
+          setIsOnboardingDone(false);
           setIsAuthLoading(false);
           return;
         }
@@ -304,39 +273,53 @@ export default function App() {
             const authUser = await fetchUserProfileAndStore(session.user.id);
             if (isMounted) {
               setCurrentUser(authUser);
-              if (authUser) {
-                setStoreSettings((prev) => ({
-                  ...prev,
-                  storeName: authUser.storeName || prev.storeName,
-                  storeUsername: authUser.storeUsername || prev.storeUsername || 'ordo',
-                  ownerName: authUser.name || prev.ownerName,
-                  storePhone: authUser.phone || prev.storePhone,
-                }));
+              if (authUser && authUser.storeId) {
+                // Fetch SEMUA pengaturan toko (profil, nota, garansi, tema, WhatsApp) langsung dari Supabase
+                try {
+                  const storeConfig = await fetchFullStoreSettings(authUser.storeId);
+                  if (isMounted && storeConfig) {
+                    setStoreSettings(storeConfig.settings);
+                    setTheme(storeConfig.theme);
+                    applyThemeToDOM(storeConfig.theme);
+                    setIsStoreSetupDone(storeConfig.hasCompletedStoreSetup);
+                    setIsOnboardingDone(storeConfig.hasCompletedOnboarding);
+                  } else if (isMounted) {
+                    setStoreSettings((prev) => ({
+                      ...prev,
+                      storeName: authUser.storeName || prev.storeName,
+                      storeUsername: authUser.storeUsername || prev.storeUsername || 'ordo',
+                      ownerName: authUser.name || prev.ownerName,
+                      storePhone: authUser.phone || prev.storePhone,
+                    }));
+                    setIsStoreSetupDone(authUser.hasCompletedStoreSetup ?? false);
+                    setIsOnboardingDone(authUser.hasCompletedOnboarding ?? false);
+                  }
+                } catch (configErr) {
+                  console.error('[App] Gagal memuat pengaturan toko dari Supabase:', configErr);
+                }
 
                 // Load tiket servis dari Supabase — SELALU override state (termasuk jika kosong)
                 // Ini mencegah data lama di localStorage muncul lagi setelah data Supabase dihapus
-                if (authUser.storeId) {
-                  try {
-                    const dbTickets = await fetchServiceTickets(authUser.storeId);
-                    if (isMounted && Array.isArray(dbTickets)) {
-                      setServices(dbTickets);
-                      // Sinkronkan ke localStorage agar konsisten
-                      try { localStorage.setItem(STORAGE_KEY_SERVICES, JSON.stringify(dbTickets)); } catch { /* ignore */ }
-                    }
-                  } catch (ticketErr) {
-                    console.error('[App] Gagal memuat tiket servis toko:', ticketErr);
+                try {
+                  const dbTickets = await fetchServiceTickets(authUser.storeId);
+                  if (isMounted && Array.isArray(dbTickets)) {
+                    setServices(dbTickets);
+                    // Sinkronkan ke localStorage agar konsisten saat offline
+                    try { localStorage.setItem(STORAGE_KEY_SERVICES, JSON.stringify(dbTickets)); } catch { /* ignore */ }
                   }
+                } catch (ticketErr) {
+                  console.error('[App] Gagal memuat tiket servis toko:', ticketErr);
+                }
 
-                  // Load catatan kas dari Supabase — SELALU override state
-                  try {
-                    const dbCashEntries = await fetchCashEntries(authUser.storeId);
-                    if (isMounted && Array.isArray(dbCashEntries)) {
-                      setCashEntries(dbCashEntries);
-                      try { localStorage.setItem(STORAGE_KEY_CASH_ENTRIES, JSON.stringify(dbCashEntries)); } catch { /* ignore */ }
-                    }
-                  } catch (cashErr) {
-                    console.error('[App] Gagal memuat catatan kas toko:', cashErr);
+                // Load catatan kas dari Supabase — SELALU override state
+                try {
+                  const dbCashEntries = await fetchCashEntries(authUser.storeId);
+                  if (isMounted && Array.isArray(dbCashEntries)) {
+                    setCashEntries(dbCashEntries);
+                    try { localStorage.setItem(STORAGE_KEY_CASH_ENTRIES, JSON.stringify(dbCashEntries)); } catch { /* ignore */ }
                   }
+                } catch (cashErr) {
+                  console.error('[App] Gagal memuat catatan kas toko:', cashErr);
                 }
               }
             }
@@ -396,22 +379,65 @@ export default function App() {
     }
   }, [currentUser, storeSettings.storeUsername, currentView]);
 
-  // Onboarding & Setup flags
-  const [isStoreSetupDone, setIsStoreSetupDone] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(STORAGE_KEY_STORE_SETUP_DONE) === 'true';
-    } catch {
-      return false;
-    }
-  });
+  // Realtime Supabase Subscription untuk sinkronisasi Pengaturan Toko & Template WA antar-sesi
+  useEffect(() => {
+    if (!isSupabaseConfigured() || !currentUser?.storeId) return;
 
-  const [isOnboardingDone, setIsOnboardingDone] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(STORAGE_KEY_ONBOARDING_DONE) === 'true';
-    } catch {
-      return false;
-    }
-  });
+    const storeId = currentUser.storeId;
+    const channel = supabase
+      .channel(`store_settings_rt_${storeId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'stores',
+          filter: `id=eq.${storeId}`,
+        },
+        async () => {
+          try {
+            const refreshed = await fetchFullStoreSettings(storeId);
+            if (refreshed) {
+              setStoreSettings(refreshed.settings);
+              setTheme(refreshed.theme);
+              applyThemeToDOM(refreshed.theme);
+              setIsStoreSetupDone(refreshed.hasCompletedStoreSetup);
+              setIsOnboardingDone(refreshed.hasCompletedOnboarding);
+            }
+          } catch (err) {
+            console.error('[App] Realtime store update error:', err);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'store_whatsapp_templates',
+          filter: `store_id=eq.${storeId}`,
+        },
+        async () => {
+          try {
+            const refreshed = await fetchFullStoreSettings(storeId);
+            if (refreshed) {
+              setStoreSettings(refreshed.settings);
+            }
+          } catch (err) {
+            console.error('[App] Realtime WA template update error:', err);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUser?.storeId]);
+
+  // Onboarding & Setup flags — dikelola oleh state cloud Supabase
+  const [isStoreSetupDone, setIsStoreSetupDone] = useState<boolean>(false);
+  const [isOnboardingDone, setIsOnboardingDone] = useState<boolean>(false);
 
   // Explicit trigger to view onboarding or setup anytime
   const [showManualOnboarding, setShowManualOnboarding] = useState(false);
@@ -507,14 +533,18 @@ export default function App() {
 
     addToast(`Selamat datang, ${user.name}!`, 'success');
 
-    // Update storeSettings with user info and username
-    setStoreSettings((prev) => ({
-      ...prev,
-      storeName: user.storeName || prev.storeName,
-      storeUsername: user.storeUsername || prev.storeUsername || 'ordo',
-      ownerName: user.name || prev.ownerName,
-      storePhone: user.phone || prev.storePhone,
-    }));
+    // Update storeSettings with full store settings from Supabase
+    if (user.storeId) {
+      fetchFullStoreSettings(user.storeId).then((storeConfig) => {
+        if (storeConfig) {
+          setStoreSettings(storeConfig.settings);
+          setTheme(storeConfig.theme);
+          applyThemeToDOM(storeConfig.theme);
+          setIsStoreSetupDone(storeConfig.hasCompletedStoreSetup);
+          setIsOnboardingDone(storeConfig.hasCompletedOnboarding);
+        }
+      });
+    }
 
     // Muat tiket servis dan catatan kas dari database — SELALU override state
     if (user.storeId && !isNewRegistration) {
@@ -535,13 +565,23 @@ export default function App() {
 
   const handleLogout = async () => {
     await signOutOwner(); // Memanggil supabase.auth.signOut() — onAuthStateChange akan otomatis menangani reset state
+    setCurrentUser(null);
+    setStoreSettings(DEFAULT_STORE_SETTINGS);
+    setTheme('dark');
+    applyThemeToDOM('dark');
+    setIsStoreSetupDone(false);
+    setIsOnboardingDone(false);
+    // Bersihkan sisa-sisa storage lama jika masih ada
     try {
-      sessionStorage.removeItem(STORAGE_KEY_AUTH);
-      localStorage.removeItem(STORAGE_KEY_AUTH);
+      localStorage.removeItem('ordo_servis_settings_v4');
+      localStorage.removeItem('ordo_servis_theme_v4');
+      localStorage.removeItem('ordo_servis_onboarding_done_v4');
+      localStorage.removeItem('ordo_servis_store_setup_done_v4');
+      localStorage.removeItem('ordo_servis_auth_user_v4');
+      sessionStorage.removeItem('ordo_servis_auth_user_v4');
     } catch {
       // ignore
     }
-    setCurrentUser(null);
     setCurrentView('landing');
     if (typeof window !== 'undefined') {
       window.history.replaceState(null, '', '/');
@@ -550,7 +590,7 @@ export default function App() {
     addToast('Anda telah keluar (Logout).', 'info');
   };
 
-  const handleStoreSetupComplete = (newSettings: StoreSettings) => {
+  const handleStoreSetupComplete = async (newSettings: StoreSettings) => {
     setStoreSettings(newSettings);
     setIsStoreSetupDone(true);
     setShowManualStoreSetup(false);
@@ -561,39 +601,50 @@ export default function App() {
         storeName: newSettings.storeName?.trim() || currentUser.storeName,
         storeUsername: newSettings.storeUsername || currentUser.storeUsername || 'jayaphone',
         phone: newSettings.storePhone?.trim() || currentUser.phone,
+        hasCompletedStoreSetup: true,
       };
       setCurrentUser(updatedUser);
-      try {
-        sessionStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedUser));
-      } catch {
-        // ignore
-      }
-    }
-    try {
-      localStorage.setItem(STORAGE_KEY_STORE_SETUP_DONE, 'true');
-    } catch {
-      // ignore
     }
     addToast('Profil konter & format nota berhasil dikonfigurasi!', 'success');
 
     // Sinkronkan ke Supabase (non-blocking)
     if (currentUser?.storeId) {
-      saveAllStoreSettings({
-        storeId: currentUser.storeId,
-        settings: newSettings,
-      }).catch((err) => console.error('[App] saveAllStoreSettings (StoreSetup) error:', err));
+      try {
+        const [saveResult] = await Promise.all([
+          saveAllStoreSettings({
+            storeId: currentUser.storeId,
+            settings: newSettings,
+          }),
+          updateStoreOnboardingStatus(currentUser.storeId, {
+            hasCompletedStoreSetup: true,
+          }),
+        ]);
+        if (saveResult.updatedSettings) {
+          setStoreSettings(saveResult.updatedSettings);
+        }
+      } catch (err) {
+        console.error('[App] saveAllStoreSettings (StoreSetup) error:', err);
+      }
     }
   };
 
   const handleOnboardingFinish = () => {
     setIsOnboardingDone(true);
     setShowManualOnboarding(false);
-    try {
-      localStorage.setItem(STORAGE_KEY_ONBOARDING_DONE, 'true');
-    } catch {
-      // ignore
+    if (currentUser) {
+      setCurrentUser({
+        ...currentUser,
+        hasCompletedOnboarding: true,
+      });
     }
     addToast('Tutorial selesai! Sistem siap digunakan untuk mengelola servis HP.', 'success');
+
+    // Sinkronkan status onboarding ke Supabase
+    if (currentUser?.storeId) {
+      updateStoreOnboardingStatus(currentUser.storeId, {
+        hasCompletedOnboarding: true,
+      }).catch((err) => console.error('[App] updateStoreOnboardingStatus error:', err));
+    }
   };
 
   // Handlers: Service Intake
@@ -1613,7 +1664,8 @@ export default function App() {
           {currentView === 'settings' && (
             <SettingsView
               settings={storeSettings}
-              onSaveSettings={(s) => {
+              onSaveSettings={async (s) => {
+                // Optimistic UI update
                 setStoreSettings(s);
                 if (currentUser) {
                   const updatedUser: AuthUser = {
@@ -1623,22 +1675,28 @@ export default function App() {
                     phone: s.storePhone?.trim() || currentUser.phone,
                   };
                   setCurrentUser(updatedUser);
-                  try {
-                    sessionStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify(updatedUser));
-                  } catch {
-                    // ignore
-                  }
                 }
-                addToast('Pengaturan toko & nama pemilik berhasil disimpan!', 'success');
 
-                // Sinkronkan ke Supabase (non-blocking — tidak menghambat UI)
+                // Cloud Sync: Operasi UPDATE langsung ke Supabase, lalu sinkronkan respons kembali ke global state
                 if (currentUser?.storeId) {
-                  saveAllStoreSettings({
-                    storeId: currentUser.storeId,
-                    settings: s,
-                  }).catch((err) =>
-                    console.error('[App] saveAllStoreSettings error:', err)
-                  );
+                  try {
+                    const res = await saveAllStoreSettings({
+                      storeId: currentUser.storeId,
+                      settings: s,
+                    });
+                    if (res.success && res.updatedSettings) {
+                      setStoreSettings(res.updatedSettings);
+                      addToast('Pengaturan toko & format nota berhasil disimpan ke Cloud!', 'success');
+                    } else if (res.errors && res.errors.length > 0) {
+                      console.error('[App] saveAllStoreSettings errors:', res.errors);
+                      addToast('Sebagian pengaturan gagal disimpan: ' + res.errors.join(', '), 'warning');
+                    }
+                  } catch (err) {
+                    console.error('[App] saveAllStoreSettings error:', err);
+                    addToast('Gagal menyinkronkan pengaturan ke Supabase Cloud', 'warning');
+                  }
+                } else {
+                  addToast('Pengaturan toko berhasil disimpan (mode lokal)!', 'success');
                 }
               }}
               onUploadLogo={async (base64: string) => {
