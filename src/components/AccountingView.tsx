@@ -162,13 +162,13 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
     'AUTO' | 'TODAY' | 'MONTH' | 'YEAR' | 'ALL'
   >('AUTO');
 
-  // === State untuk Filter Rentang Tanggal (Catatan Uang / Buku Kas) ===
+  // === Filter Rentang Tanggal Global — berlaku untuk SEMUA kalkulasi keuangan ===
   // Default: dari awal bulan ini sampai hari ini
   const defaultStartDate = useMemo(() => `${currentMonthStr}-01`, [currentMonthStr]);
   const [showDateRangePopup, setShowDateRangePopup] = useState(false);
   const [draftStartDate, setDraftStartDate] = useState<string>(defaultStartDate);
   const [draftEndDate, setDraftEndDate] = useState<string>(todayStr);
-  // Filter aktif yang benar-benar diterapkan ke data
+  // Filter aktif yang benar-benar diterapkan ke SEMUA data
   const [activeDateRangeStart, setActiveDateRangeStart] = useState<string>(defaultStartDate);
   const [activeDateRangeEnd, setActiveDateRangeEnd] = useState<string>(todayStr);
   const dateRangePopupRef = useRef<HTMLDivElement>(null);
@@ -193,15 +193,36 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
 
   const isDateRangeActive = activeDateRangeStart !== defaultStartDate || activeDateRangeEnd !== todayStr;
 
+  // Label rentang tanggal aktif untuk ditampilkan di badge/label
+  const dateRangeLabel = useMemo(() => {
+    if (activeDateRangeStart === activeDateRangeEnd) {
+      return activeDateRangeStart === todayStr ? 'Hari Ini' : activeDateRangeStart;
+    }
+    if (activeDateRangeStart === defaultStartDate && activeDateRangeEnd === todayStr) {
+      const [y, mStr] = currentMonthStr.split('-');
+      return `Bulan Ini (${getMonthNameIndo(parseInt(mStr) - 1)} ${y})`;
+    }
+    return `${activeDateRangeStart} – ${activeDateRangeEnd}`;
+  }, [activeDateRangeStart, activeDateRangeEnd, todayStr, defaultStartDate, currentMonthStr]);
+
   const scroll = (offset: number) => {
     if (containerRef.current) {
       containerRef.current.scrollBy({ left: offset, behavior: 'smooth' });
     }
   };
 
-  const transactions = useMemo(
+  // transactions: semua transaksi mentah (dipakai sebagai basis sebelum filter global)
+  const allTransactions = useMemo(
     () => getLedgerTransactions(services, cashEntries),
     [services, cashEntries]
+  );
+
+  // transactions yang sudah difilter oleh rentang tanggal aktif — basis SEMUA kalkulasi
+  const transactions = useMemo(
+    () => allTransactions.filter(
+      (t) => t.date >= activeDateRangeStart && t.date <= activeDateRangeEnd
+    ),
+    [allTransactions, activeDateRangeStart, activeDateRangeEnd]
   );
 
   // Label & Badge Periode untuk Posisi Uang Pembayaran
@@ -307,6 +328,8 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
     const matchesScope = (dateStr: string) => {
       if (!dateStr) return false;
       const d = dateStr.split(' ')[0];
+      // Filter global rentang tanggal
+      if (d < activeDateRangeStart || d > activeDateRangeEnd) return false;
       if (paymentScope === 'TODAY') return d === todayStr;
       if (paymentScope === 'MONTH') return d.startsWith(currentMonthStr);
       if (paymentScope === 'YEAR') return d.startsWith(currentYearStr);
@@ -460,15 +483,18 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
     todayStr,
     currentMonthStr,
     currentYearStr,
+    activeDateRangeStart,
+    activeDateRangeEnd,
   ]);
 
-  // Collect available dates, months, and years from all transactions
+  // Collect available dates, months, and years — gunakan allTransactions (sebelum filter global)
+  // agar dropdown periode tetap menampilkan semua opsi historis
   const { availableDates, availableMonths, availableYears } = useMemo(() => {
     const dateSet = new Set<string>();
     const monthSet = new Set<string>();
     const yearSet = new Set<string>();
 
-    transactions.forEach((t) => {
+    allTransactions.forEach((t) => {
       if (t.date) {
         dateSet.add(t.date);
         monthSet.add(t.date.substring(0, 7));
@@ -486,7 +512,7 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
       availableMonths: Array.from(monthSet).sort().reverse(),
       availableYears: Array.from(yearSet).sort().reverse(),
     };
-  }, [transactions, todayStr, currentMonthStr, currentYearStr]);
+  }, [allTransactions, todayStr, currentMonthStr, currentYearStr]);
 
   // Aggregate by Day
   const dailyData = useMemo(() => {
@@ -743,42 +769,27 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
 
   const netProfit = totalIncome - totalExpense;
 
-  // Filter Buku Kas Masuk & Keluar berdasarkan tanggal/bulan/tahun yang dipilih
-  // Ketika tab CASH_BOOK aktif, gunakan filter rentang tanggal (activeDateRange)
+  // Filter Buku Kas Masuk & Keluar — selalu menggunakan rentang tanggal global
+  // Kemudian disaring lebih lanjut oleh filter periode (Harian/Bulanan/Tahunan) jika relevan
   const filteredCashEntries = useMemo(() => {
     return cashEntries.filter((c) => {
-      // Jika sedang di tab CASH_BOOK, gunakan filter rentang tanggal
-      if (activeTab === 'CASH_BOOK') {
-        return c.date >= activeDateRangeStart && c.date <= activeDateRangeEnd;
-      }
-      // Untuk tab SUMMARY (dipakai oleh komponen lain, tetap pakai logika periode)
-      if (periodType === 'DAILY') {
-        if (selectedDailyDate !== 'ALL') {
-          return c.date === selectedDailyDate;
+      // Langkah 1: Filter rentang tanggal global (berlaku di semua tab)
+      if (c.date < activeDateRangeStart || c.date > activeDateRangeEnd) return false;
+      // Langkah 2: Filter periode tambahan (Harian/Bulanan/Tahunan) jika tab SUMMARY aktif
+      if (activeTab === 'SUMMARY') {
+        if (periodType === 'DAILY') {
+          if (selectedDailyDate !== 'ALL') return c.date === selectedDailyDate;
+          if (selectedMonth !== 'ALL') return c.date.startsWith(selectedMonth);
+        } else if (periodType === 'MONTHLY') {
+          if (selectedMonth !== 'ALL') return c.date.startsWith(selectedMonth);
+          if (selectedYear !== 'ALL') return c.date.startsWith(selectedYear);
+        } else if (periodType === 'YEARLY') {
+          if (selectedYear !== 'ALL') return c.date.startsWith(selectedYear);
         }
-        if (selectedMonth !== 'ALL') {
-          return c.date.startsWith(selectedMonth);
-        }
-        return true;
-      }
-      if (periodType === 'MONTHLY') {
-        if (selectedMonth !== 'ALL') {
-          return c.date.startsWith(selectedMonth);
-        }
-        if (selectedYear !== 'ALL') {
-          return c.date.startsWith(selectedYear);
-        }
-        return true;
-      }
-      if (periodType === 'YEARLY') {
-        if (selectedYear !== 'ALL') {
-          return c.date.startsWith(selectedYear);
-        }
-        return true;
       }
       return true;
     }).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
-  }, [cashEntries, activeTab, activeDateRangeStart, activeDateRangeEnd, periodType, selectedDailyDate, selectedMonth, selectedYear]);
+  }, [cashEntries, activeDateRangeStart, activeDateRangeEnd, activeTab, periodType, selectedDailyDate, selectedMonth, selectedYear]);
 
   // Perhitungan total Kas Masuk, Kas Keluar, Saldo Kas, dan Total Transaksi Kas untuk Buku Kas
   const { cashInTotal, cashOutTotal, cashBalance, cashTxCount } = useMemo(() => {
@@ -987,6 +998,132 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2 self-end sm:self-auto">
+          {/* Tombol Filter Rentang Tanggal — selalu tampil di semua tab */}
+          <div className="relative" ref={dateRangePopupRef}>
+            <button
+              type="button"
+              onClick={() => {
+                setDraftStartDate(activeDateRangeStart);
+                setDraftEndDate(activeDateRangeEnd);
+                setShowDateRangePopup((prev) => !prev);
+              }}
+              title="Filter Rentang Tanggal"
+              className={`p-2 px-3 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                isDateRangeActive
+                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50 shadow-sm'
+                  : 'bg-zinc-950 hover:bg-zinc-800 text-zinc-300 border-zinc-700'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">
+                {isDateRangeActive ? dateRangeLabel : 'Filter Tanggal'}
+              </span>
+            </button>
+
+            {/* Popover Rentang Tanggal */}
+            {showDateRangePopup && (
+              <div className="absolute right-0 top-full mt-2 z-50 bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl p-4 w-72 animate-in fade-in slide-in-from-top-2 duration-150">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-black text-white flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+                    Filter Rentang Tanggal
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setShowDateRangePopup(false)}
+                    className="text-zinc-500 hover:text-white text-sm font-bold transition-colors cursor-pointer leading-none"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <p className="text-[10px] text-zinc-500 mb-3 leading-relaxed">
+                  Filter ini berlaku global untuk semua kalkulasi: Pemasukan, Pengeluaran, Laba/Rugi, dan Catatan Kas.
+                </p>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-zinc-400 block mb-1">Dari Tanggal</label>
+                    <input
+                      type="date"
+                      value={draftStartDate}
+                      onChange={(e) => setDraftStartDate(e.target.value)}
+                      max={draftEndDate}
+                      className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white font-bold focus:border-emerald-500 focus:outline-none cursor-pointer"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-zinc-400 block mb-1">Sampai Tanggal</label>
+                    <input
+                      type="date"
+                      value={draftEndDate}
+                      onChange={(e) => setDraftEndDate(e.target.value)}
+                      min={draftStartDate}
+                      className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white font-bold focus:border-emerald-500 focus:outline-none cursor-pointer"
+                    />
+                  </div>
+
+                  {/* Shortcut Preset */}
+                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => { setDraftStartDate(todayStr); setDraftEndDate(todayStr); }}
+                      className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold border border-zinc-700 transition-colors cursor-pointer"
+                    >
+                      Hari Ini
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setDraftStartDate(defaultStartDate); setDraftEndDate(todayStr); }}
+                      className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold border border-zinc-700 transition-colors cursor-pointer"
+                    >
+                      Bulan Ini
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setDraftStartDate(`${currentYearStr}-01-01`); setDraftEndDate(todayStr); }}
+                      className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold border border-zinc-700 transition-colors cursor-pointer"
+                    >
+                      Tahun Ini
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setDraftStartDate('2020-01-01'); setDraftEndDate(todayStr); }}
+                      className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold border border-zinc-700 transition-colors cursor-pointer"
+                    >
+                      Semua Data
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleApplyDateRange}
+                    className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-xs transition-colors cursor-pointer shadow-sm"
+                  >
+                    ✓ Terapkan Filter
+                  </button>
+
+                  {isDateRangeActive && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveDateRangeStart(defaultStartDate);
+                        setActiveDateRangeEnd(todayStr);
+                        setDraftStartDate(defaultStartDate);
+                        setDraftEndDate(todayStr);
+                        setShowDateRangePopup(false);
+                      }}
+                      className="w-full py-2 rounded-xl bg-transparent hover:bg-zinc-800 text-zinc-400 hover:text-zinc-300 font-bold text-[11px] transition-colors cursor-pointer border border-zinc-800"
+                    >
+                      Reset ke Bulan Ini
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             onClick={handleExportExcel}
             title="Ekspor Seluruh Data ke Excel (.xlsx)"
@@ -1071,126 +1208,6 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
               <Receipt className="w-3.5 h-3.5 text-emerald-400" />
               <span>Buku Kas Masuk & Keluar ({filteredCashEntries.length})</span>
             </button>
-
-            {/* Tombol Filter Rentang Tanggal (Ikon Kalender) — hanya muncul di tab CASH_BOOK */}
-            {activeTab === 'CASH_BOOK' && (
-              <div className="relative" ref={dateRangePopupRef}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDraftStartDate(activeDateRangeStart);
-                    setDraftEndDate(activeDateRangeEnd);
-                    setShowDateRangePopup((prev) => !prev);
-                  }}
-                  title="Filter Rentang Tanggal"
-                  className={`p-2 px-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                    isDateRangeActive
-                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50 shadow-sm'
-                      : 'bg-zinc-950 text-zinc-400 hover:text-white border-zinc-800 hover:border-zinc-600'
-                  }`}
-                >
-                  <Calendar className="w-3.5 h-3.5" />
-                  {isDateRangeActive && (
-                    <span className="text-[10px] font-bold">
-                      {activeDateRangeStart} – {activeDateRangeEnd}
-                    </span>
-                  )}
-                </button>
-
-                {/* Popover Rentang Tanggal */}
-                {showDateRangePopup && (
-                  <div className="absolute left-0 top-full mt-2 z-50 bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl p-4 w-72 animate-in fade-in slide-in-from-top-2 duration-150">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-xs font-black text-white flex items-center gap-1.5">
-                        <Calendar className="w-3.5 h-3.5 text-emerald-400" />
-                        Filter Rentang Tanggal
-                      </h4>
-                      <button
-                        type="button"
-                        onClick={() => setShowDateRangePopup(false)}
-                        className="text-zinc-500 hover:text-white text-sm font-bold transition-colors cursor-pointer leading-none"
-                      >
-                        ✕
-                      </button>
-                    </div>
-
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-[11px] font-bold text-zinc-400 block mb-1">Dari Tanggal</label>
-                        <input
-                          type="date"
-                          value={draftStartDate}
-                          onChange={(e) => setDraftStartDate(e.target.value)}
-                          max={draftEndDate}
-                          className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white font-bold focus:border-emerald-500 focus:outline-none cursor-pointer"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-[11px] font-bold text-zinc-400 block mb-1">Sampai Tanggal</label>
-                        <input
-                          type="date"
-                          value={draftEndDate}
-                          onChange={(e) => setDraftEndDate(e.target.value)}
-                          min={draftStartDate}
-                          max={todayStr}
-                          className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white font-bold focus:border-emerald-500 focus:outline-none cursor-pointer"
-                        />
-                      </div>
-
-                      {/* Shortcut Preset */}
-                      <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                        <button
-                          type="button"
-                          onClick={() => { setDraftStartDate(todayStr); setDraftEndDate(todayStr); }}
-                          className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold border border-zinc-700 transition-colors cursor-pointer"
-                        >
-                          Hari Ini
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => { setDraftStartDate(defaultStartDate); setDraftEndDate(todayStr); }}
-                          className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold border border-zinc-700 transition-colors cursor-pointer"
-                        >
-                          Bulan Ini
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => { setDraftStartDate(`${currentYearStr}-01-01`); setDraftEndDate(todayStr); }}
-                          className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold border border-zinc-700 transition-colors cursor-pointer"
-                        >
-                          Tahun Ini
-                        </button>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={handleApplyDateRange}
-                        className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-xs transition-colors cursor-pointer shadow-sm"
-                      >
-                        ✓ Terapkan Filter
-                      </button>
-
-                      {isDateRangeActive && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveDateRangeStart(defaultStartDate);
-                            setActiveDateRangeEnd(todayStr);
-                            setDraftStartDate(defaultStartDate);
-                            setDraftEndDate(todayStr);
-                            setShowDateRangePopup(false);
-                          }}
-                          className="w-full py-2 rounded-xl bg-transparent hover:bg-zinc-800 text-zinc-400 hover:text-zinc-300 font-bold text-[11px] transition-colors cursor-pointer border border-zinc-800"
-                        >
-                          Reset ke Bulan Ini
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
 
