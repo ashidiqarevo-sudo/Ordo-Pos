@@ -55,6 +55,51 @@ export async function fetchCashEntries(storeId: string): Promise<CashEntry[]> {
 }
 
 // ==============================================================================
+// FETCH BY DATE RANGE: Ambil entri kas berdasarkan rentang tanggal
+// ==============================================================================
+
+/**
+ * Mengambil catatan kas berdasarkan rentang tanggal tertentu.
+ * Menggunakan `.gte()` (≥ startDate) dan `.lte()` (≤ endDate) untuk filter server-side
+ * yang efisien langsung di Supabase — tidak perlu filter manual di client.
+ *
+ * @param storeId   - ID toko pemilik data
+ * @param startDate - Tanggal awal filter, format 'YYYY-MM-DD'
+ * @param endDate   - Tanggal akhir filter, format 'YYYY-MM-DD'
+ */
+export async function fetchCashEntriesByDateRange(
+  storeId: string,
+  startDate: string,
+  endDate: string
+): Promise<CashEntry[]> {
+  if (!isSupabaseConfigured() || !storeId) {
+    return [];
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('cash_entries')
+      .select('*')
+      .eq('store_id', storeId)
+      .gte('entry_date', startDate)   // entry_date >= startDate
+      .lte('entry_date', endDate)     // entry_date <= endDate
+      .order('entry_date', { ascending: false })
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[cashService] Gagal mengambil entri kas (rentang tanggal):', error);
+      return [];
+    }
+
+    return (data || []).map(mapDbRowToCashEntry);
+  } catch (err) {
+    console.error('[cashService] Error fetchCashEntriesByDateRange:', err);
+    return [];
+  }
+}
+
+
+// ==============================================================================
 // ADD: Catat entri kas baru (IN / OUT / TRANSFER)
 // ==============================================================================
 
