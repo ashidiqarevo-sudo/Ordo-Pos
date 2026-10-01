@@ -1020,105 +1020,113 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
               </span>
             </button>
 
-            {/* Popover Rentang Tanggal */}
+            {/* Modal / Dialog Rentang Tanggal Responsif */}
             {showDateRangePopup && (
-              <div className="absolute right-0 top-full mt-2 z-50 bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl p-4 w-72 animate-in fade-in slide-in-from-top-2 duration-150">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-xs font-black text-white flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-emerald-400" />
-                    Filter Rentang Tanggal
-                  </h4>
-                  <button
-                    type="button"
-                    onClick={() => setShowDateRangePopup(false)}
-                    className="text-zinc-500 hover:text-white text-sm font-bold transition-colors cursor-pointer leading-none"
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                <p className="text-[10px] text-zinc-500 mb-3 leading-relaxed">
-                  Filter ini berlaku global untuk semua kalkulasi: Pemasukan, Pengeluaran, Laba/Rugi, dan Catatan Kas.
-                </p>
-
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-[11px] font-bold text-zinc-400 block mb-1">Dari Tanggal</label>
-                    <input
-                      type="date"
-                      value={draftStartDate}
-                      onChange={(e) => setDraftStartDate(e.target.value)}
-                      max={draftEndDate}
-                      className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white font-bold focus:border-emerald-500 focus:outline-none cursor-pointer"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-bold text-zinc-400 block mb-1">Sampai Tanggal</label>
-                    <input
-                      type="date"
-                      value={draftEndDate}
-                      onChange={(e) => setDraftEndDate(e.target.value)}
-                      min={draftStartDate}
-                      className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white font-bold focus:border-emerald-500 focus:outline-none cursor-pointer"
-                    />
-                  </div>
-
-                  {/* Shortcut Preset */}
-                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+                onClick={() => setShowDateRangePopup(false)}
+              >
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl p-4 sm:p-5 w-[90vw] max-w-sm animate-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-xs font-black text-white flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+                      Filter Rentang Tanggal
+                    </h4>
                     <button
                       type="button"
-                      onClick={() => { setDraftStartDate(todayStr); setDraftEndDate(todayStr); }}
-                      className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold border border-zinc-700 transition-colors cursor-pointer"
+                      onClick={() => setShowDateRangePopup(false)}
+                      className="text-zinc-500 hover:text-white text-sm font-bold transition-colors cursor-pointer leading-none p-1"
                     >
-                      Hari Ini
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setDraftStartDate(defaultStartDate); setDraftEndDate(todayStr); }}
-                      className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold border border-zinc-700 transition-colors cursor-pointer"
-                    >
-                      Bulan Ini
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setDraftStartDate(`${currentYearStr}-01-01`); setDraftEndDate(todayStr); }}
-                      className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold border border-zinc-700 transition-colors cursor-pointer"
-                    >
-                      Tahun Ini
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setDraftStartDate('2020-01-01'); setDraftEndDate(todayStr); }}
-                      className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold border border-zinc-700 transition-colors cursor-pointer"
-                    >
-                      Semua Data
+                      ✕
                     </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handleApplyDateRange}
-                    className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-xs transition-colors cursor-pointer shadow-sm"
-                  >
-                    ✓ Terapkan Filter
-                  </button>
+                  <p className="text-[10px] text-zinc-500 mb-3 leading-relaxed">
+                    Filter ini berlaku global untuk semua kalkulasi: Pemasukan, Pengeluaran, Laba/Rugi, dan Catatan Kas.
+                  </p>
 
-                  {isDateRangeActive && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[11px] font-bold text-zinc-400 block mb-1">Dari Tanggal</label>
+                      <input
+                        type="date"
+                        value={draftStartDate}
+                        onChange={(e) => setDraftStartDate(e.target.value)}
+                        max={draftEndDate}
+                        className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white font-bold focus:border-emerald-500 focus:outline-none cursor-pointer"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-zinc-400 block mb-1">Sampai Tanggal</label>
+                      <input
+                        type="date"
+                        value={draftEndDate}
+                        onChange={(e) => setDraftEndDate(e.target.value)}
+                        min={draftStartDate}
+                        className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white font-bold focus:border-emerald-500 focus:outline-none cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Shortcut Preset */}
+                    <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => { setDraftStartDate(todayStr); setDraftEndDate(todayStr); }}
+                        className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold border border-zinc-700 transition-colors cursor-pointer"
+                      >
+                        Hari Ini
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setDraftStartDate(defaultStartDate); setDraftEndDate(todayStr); }}
+                        className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold border border-zinc-700 transition-colors cursor-pointer"
+                      >
+                        Bulan Ini
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setDraftStartDate(`${currentYearStr}-01-01`); setDraftEndDate(todayStr); }}
+                        className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold border border-zinc-700 transition-colors cursor-pointer"
+                      >
+                        Tahun Ini
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setDraftStartDate('2020-01-01'); setDraftEndDate(todayStr); }}
+                        className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold border border-zinc-700 transition-colors cursor-pointer"
+                      >
+                        Semua Data
+                      </button>
+                    </div>
+
                     <button
                       type="button"
-                      onClick={() => {
-                        setActiveDateRangeStart(defaultStartDate);
-                        setActiveDateRangeEnd(todayStr);
-                        setDraftStartDate(defaultStartDate);
-                        setDraftEndDate(todayStr);
-                        setShowDateRangePopup(false);
-                      }}
-                      className="w-full py-2 rounded-xl bg-transparent hover:bg-zinc-800 text-zinc-400 hover:text-zinc-300 font-bold text-[11px] transition-colors cursor-pointer border border-zinc-800"
+                      onClick={handleApplyDateRange}
+                      className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-xs transition-colors cursor-pointer shadow-sm"
                     >
-                      Reset ke Bulan Ini
+                      ✓ Terapkan Filter
                     </button>
-                  )}
+
+                    {isDateRangeActive && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveDateRangeStart(defaultStartDate);
+                          setActiveDateRangeEnd(todayStr);
+                          setDraftStartDate(defaultStartDate);
+                          setDraftEndDate(todayStr);
+                          setShowDateRangePopup(false);
+                        }}
+                        className="w-full py-2 rounded-xl bg-transparent hover:bg-zinc-800 text-zinc-400 hover:text-zinc-300 font-bold text-[11px] transition-colors cursor-pointer border border-zinc-800"
+                      >
+                        Reset ke Bulan Ini
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
