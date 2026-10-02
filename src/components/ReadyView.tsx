@@ -52,7 +52,8 @@ export const ReadyView: React.FC<ReadyViewProps> = ({
       s.deviceModel.toLowerCase().includes(q) ||
       s.customerPhone.includes(q)
     );
-  });
+  }).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
 
   return (
     <section className="space-y-6 animate-in fade-in duration-200">

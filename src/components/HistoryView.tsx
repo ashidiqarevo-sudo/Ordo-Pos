@@ -109,7 +109,13 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
       (s.diagnosis && s.diagnosis.toLowerCase().includes(q)) ||
       (s.notes && s.notes.toLowerCase().includes(q))
     );
+  }).sort((a, b) => {
+    // Urutkan berdasarkan waktu diambil (terbaru di atas), fallback ke createdAt
+    const dateA = a.pickedUpAt || a.createdAt || '';
+    const dateB = b.pickedUpAt || b.createdAt || '';
+    return dateB.localeCompare(dateA);
   });
+
 
   return (
     <section className="space-y-6 animate-in fade-in duration-200">

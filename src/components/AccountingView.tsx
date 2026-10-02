@@ -152,7 +152,8 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
   const currentMonthStr = useMemo(() => todayStr.substring(0, 7), [todayStr]);
   const currentYearStr = useMemo(() => todayStr.substring(0, 4), [todayStr]);
 
-  const [periodType, setPeriodType] = useState<AccountingPeriodType>('DAILY');
+  // periodType: 'DAILY' | 'MONTHLY' | 'YEARLY' | 'CUSTOM' (Rentang Tanggal)
+  const [periodType, setPeriodType] = useState<AccountingPeriodType | 'CUSTOM'>('DAILY');
   const [activeTab, setActiveTab] = useState<'SUMMARY' | 'CASH_BOOK'>('SUMMARY');
   const [selectedDailyDate, setSelectedDailyDate] = useState<string>('ALL');
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthStr);
@@ -217,13 +218,16 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
     [services, cashEntries]
   );
 
-  // transactions yang sudah difilter oleh rentang tanggal aktif — basis SEMUA kalkulasi
-  const transactions = useMemo(
-    () => allTransactions.filter(
-      (t) => t.date >= activeDateRangeStart && t.date <= activeDateRangeEnd
-    ),
-    [allTransactions, activeDateRangeStart, activeDateRangeEnd]
-  );
+  // transactions: filter hanya berlaku saat mode CUSTOM (Rentang Tanggal)
+  // Mode DAILY/MONTHLY/YEARLY: gunakan semua transaksi, filter dilakukan di agregasi masing-masing
+  const transactions = useMemo(() => {
+    if (periodType === 'CUSTOM') {
+      return allTransactions.filter(
+        (t) => t.date >= activeDateRangeStart && t.date <= activeDateRangeEnd
+      );
+    }
+    return allTransactions;
+  }, [allTransactions, periodType, activeDateRangeStart, activeDateRangeEnd]);
 
   // Label & Badge Periode untuk Posisi Uang Pembayaran
   const { paymentPeriodBadge, paymentPeriodDesc } = useMemo(() => {
@@ -769,23 +773,24 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
 
   const netProfit = totalIncome - totalExpense;
 
-  // Filter Buku Kas Masuk & Keluar — selalu menggunakan rentang tanggal global
-  // Kemudian disaring lebih lanjut oleh filter periode (Harian/Bulanan/Tahunan) jika relevan
+  // Filter Buku Kas:
+  // - Mode CUSTOM: filter berdasarkan rentang tanggal yang dipilih
+  // - Mode DAILY/MONTHLY/YEARLY: filter berdasarkan pilihan periode standar
   const filteredCashEntries = useMemo(() => {
     return cashEntries.filter((c) => {
-      // Langkah 1: Filter rentang tanggal global (berlaku di semua tab)
-      if (c.date < activeDateRangeStart || c.date > activeDateRangeEnd) return false;
-      // Langkah 2: Filter periode tambahan (Harian/Bulanan/Tahunan) jika tab SUMMARY aktif
-      if (activeTab === 'SUMMARY') {
-        if (periodType === 'DAILY') {
-          if (selectedDailyDate !== 'ALL') return c.date === selectedDailyDate;
-          if (selectedMonth !== 'ALL') return c.date.startsWith(selectedMonth);
-        } else if (periodType === 'MONTHLY') {
-          if (selectedMonth !== 'ALL') return c.date.startsWith(selectedMonth);
-          if (selectedYear !== 'ALL') return c.date.startsWith(selectedYear);
-        } else if (periodType === 'YEARLY') {
-          if (selectedYear !== 'ALL') return c.date.startsWith(selectedYear);
-        }
+      if (periodType === 'CUSTOM') {
+        // Mode Rentang Tanggal: filter berdasarkan aktiveDateRange
+        return c.date >= activeDateRangeStart && c.date <= activeDateRangeEnd;
+      }
+      // Mode standar: filter berdasarkan periode yang dipilih
+      if (periodType === 'DAILY') {
+        if (selectedDailyDate !== 'ALL') return c.date === selectedDailyDate;
+        if (selectedMonth !== 'ALL') return c.date.startsWith(selectedMonth);
+      } else if (periodType === 'MONTHLY') {
+        if (selectedMonth !== 'ALL') return c.date.startsWith(selectedMonth);
+        if (selectedYear !== 'ALL') return c.date.startsWith(selectedYear);
+      } else if (periodType === 'YEARLY') {
+        if (selectedYear !== 'ALL') return c.date.startsWith(selectedYear);
       }
       return true;
     }).sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
@@ -988,6 +993,18 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
             <MinusCircle className="w-4 h-4 text-rose-400" />
             <span>- Keluarkan Uang</span>
           </button>
+          {/* Buku Kas — tepat di tengah antara Keluarkan Uang dan Pemindahan Uang */}
+          <button
+            onClick={() => setActiveTab('CASH_BOOK')}
+            className={`flex-1 sm:flex-none px-4 py-2 rounded-xl border font-extrabold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer ${
+              activeTab === 'CASH_BOOK'
+                ? 'bg-zinc-700 text-white border-zinc-500'
+                : 'bg-zinc-800/80 hover:bg-zinc-700/80 text-zinc-300 border-zinc-700'
+            }`}
+          >
+            <Receipt className="w-4 h-4 text-emerald-400" />
+            <span>Buku Kas</span>
+          </button>
           <button
             onClick={() => onOpenAddCash('TRANSFER')}
             className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 font-extrabold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
@@ -998,8 +1015,6 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2 self-end sm:self-auto">
-          {/* Tombol Filter Rentang Tanggal — selalu tampil di semua tab */}
-          <div className="relative" ref={dateRangePopupRef}>
             <button
               type="button"
               onClick={() => {
@@ -1130,7 +1145,6 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
                 </div>
               </div>
             )}
-          </div>
 
           <button
             onClick={handleExportExcel}
@@ -1204,18 +1218,72 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
               </button>
             </div>
 
-            {/* Sub Tab: Buku Kas Masuk/Keluar */}
-            <button
-              onClick={() => setActiveTab('CASH_BOOK')}
-              className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                activeTab === 'CASH_BOOK'
-                  ? 'bg-zinc-800 text-white border-zinc-600 shadow-sm'
-                  : 'bg-zinc-950 text-zinc-400 hover:text-white border-zinc-800'
-              }`}
-            >
-              <Receipt className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Buku Kas Masuk & Keluar ({filteredCashEntries.length})</span>
-            </button>
+            {/* Opsi ke-4: Rentang Tanggal (Custom) */}
+            <div className="relative" ref={dateRangePopupRef}>
+              <button
+                onClick={() => {
+                  setPeriodType('CUSTOM');
+                  setActiveTab('SUMMARY');
+                  setDraftStartDate(activeDateRangeStart);
+                  setDraftEndDate(activeDateRangeEnd);
+                  setShowDateRangePopup(true);
+                }}
+                className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  periodType === 'CUSTOM' && activeTab === 'SUMMARY'
+                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50 shadow-xs'
+                    : 'bg-zinc-950 text-zinc-400 hover:text-white border-zinc-800'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">
+                  {periodType === 'CUSTOM' && isDateRangeActive
+                    ? `${activeDateRangeStart.substring(5)} – ${activeDateRangeEnd.substring(5)}`
+                    : 'Rentang Tanggal'}
+                </span>
+                <span className="sm:hidden">Custom</span>
+              </button>
+
+              {/* Modal kalender — hanya muncul saat mode CUSTOM dipilih */}
+              {showDateRangePopup && periodType === 'CUSTOM' && (
+                <div
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+                  onClick={() => setShowDateRangePopup(false)}
+                >
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl p-4 sm:p-5 w-[90vw] max-w-sm animate-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto"
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-xs font-black text-white flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+                        Filter Rentang Tanggal
+                      </h4>
+                      <button type="button" onClick={() => setShowDateRangePopup(false)} className="text-zinc-500 hover:text-white text-sm font-bold transition-colors cursor-pointer leading-none p-1">✕</button>
+                    </div>
+                    <p className="text-[10px] text-zinc-500 mb-3 leading-relaxed">
+                      Tampilkan data berdasarkan rentang tanggal yang Anda tentukan sendiri.
+                    </p>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-zinc-400 block mb-1">Dari Tanggal</label>
+                        <input type="date" value={draftStartDate} onChange={(e) => setDraftStartDate(e.target.value)} max={draftEndDate} className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white font-bold focus:border-emerald-500 focus:outline-none cursor-pointer" />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-zinc-400 block mb-1">Sampai Tanggal</label>
+                        <input type="date" value={draftEndDate} onChange={(e) => setDraftEndDate(e.target.value)} min={draftStartDate} className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white font-bold focus:border-emerald-500 focus:outline-none cursor-pointer" />
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                        <button type="button" onClick={() => { setDraftStartDate(todayStr); setDraftEndDate(todayStr); }} className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold border border-zinc-700 transition-colors cursor-pointer">Hari Ini</button>
+                        <button type="button" onClick={() => { setDraftStartDate(defaultStartDate); setDraftEndDate(todayStr); }} className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold border border-zinc-700 transition-colors cursor-pointer">Bulan Ini</button>
+                        <button type="button" onClick={() => { setDraftStartDate(`${currentYearStr}-01-01`); setDraftEndDate(todayStr); }} className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold border border-zinc-700 transition-colors cursor-pointer">Tahun Ini</button>
+                        <button type="button" onClick={() => { setDraftStartDate('2020-01-01'); setDraftEndDate(todayStr); }} className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-bold border border-zinc-700 transition-colors cursor-pointer">Semua Data</button>
+                      </div>
+                      <button type="button" onClick={handleApplyDateRange} className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-xs transition-colors cursor-pointer shadow-sm">✓ Terapkan Filter</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
 
