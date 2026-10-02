@@ -1,4 +1,4 @@
-import React, { useRef, useState, useMemo, useEffect } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import {
   ServiceItem,
   LedgerTransaction,
@@ -172,19 +172,6 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
   // Filter aktif yang benar-benar diterapkan ke SEMUA data
   const [activeDateRangeStart, setActiveDateRangeStart] = useState<string>(defaultStartDate);
   const [activeDateRangeEnd, setActiveDateRangeEnd] = useState<string>(todayStr);
-  const dateRangePopupRef = useRef<HTMLDivElement>(null);
-
-  // Tutup popup jika klik di luar
-  useEffect(() => {
-    if (!showDateRangePopup) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dateRangePopupRef.current && !dateRangePopupRef.current.contains(e.target as Node)) {
-        setShowDateRangePopup(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showDateRangePopup]);
 
   const handleApplyDateRange = () => {
     setActiveDateRangeStart(draftStartDate);
@@ -1042,7 +1029,7 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
         <div className="p-4 border-b border-zinc-800 flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-zinc-950/60">
           <div className="flex items-center gap-3 flex-wrap">
             {/* Grup Toggle Periode Laporan: Harian, Bulanan, Tahunan, Rentang Tanggal */}
-            <div className="flex items-center gap-1 bg-zinc-900 p-1 rounded-xl border border-zinc-800" ref={dateRangePopupRef}>
+            <div className="flex items-center gap-1 bg-zinc-900 p-1 rounded-xl border border-zinc-800">
               <button
                 onClick={() => {
                   setPeriodType('DAILY');
@@ -1114,10 +1101,8 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
             {showDateRangePopup && (
               <div
                 className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
-                onClick={() => setShowDateRangePopup(false)}
               >
                 <div
-                  onClick={(e) => e.stopPropagation()}
                   className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl p-4 sm:p-5 w-[90vw] max-w-sm animate-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto"
                 >
                   <div className="flex items-center justify-between mb-3">
