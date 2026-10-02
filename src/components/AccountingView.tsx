@@ -968,14 +968,14 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => onOpenAddCash('IN')}
-            className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-emerald-100 hover:bg-emerald-200/90 dark:bg-emerald-950/80 dark:hover:bg-emerald-900/90 text-emerald-800 dark:text-emerald-400 border border-emerald-400/80 dark:border-emerald-700/60 font-extrabold text-xs flex items-center justify-center gap-2 transition-all shadow-xs active:scale-95 cursor-pointer"
+            className="flex-1 min-w-[140px] whitespace-nowrap px-4 py-2 rounded-xl bg-emerald-100 hover:bg-emerald-200/90 dark:bg-emerald-950/80 dark:hover:bg-emerald-900/90 text-emerald-800 dark:text-emerald-400 border border-emerald-400/80 dark:border-emerald-700/60 font-extrabold text-xs flex items-center justify-center gap-2 transition-all shadow-xs active:scale-95 cursor-pointer"
           >
             <PlusCircle className="w-4 h-4 text-emerald-800 dark:text-emerald-400" />
             <span>+ Masukan Uang</span>
           </button>
           <button
             onClick={() => onOpenAddCash('OUT')}
-            className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 font-extrabold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
+            className="flex-1 min-w-[140px] whitespace-nowrap px-4 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 font-extrabold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
           >
             <MinusCircle className="w-4 h-4 text-rose-400" />
             <span>- Keluarkan Uang</span>
@@ -983,7 +983,7 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
           {/* Buku Kas — tepat di tengah antara Keluarkan Uang dan Pemindahan Uang */}
           <button
             onClick={() => setActiveTab('CASH_BOOK')}
-            className={`flex-1 sm:flex-none px-4 py-2 rounded-xl border font-extrabold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer ${
+            className={`flex-1 min-w-[140px] whitespace-nowrap px-4 py-2 rounded-xl border font-extrabold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer ${
               activeTab === 'CASH_BOOK'
                 ? 'bg-zinc-700 text-white border-zinc-500'
                 : 'bg-zinc-800/80 hover:bg-zinc-700/80 text-zinc-300 border-zinc-700'
@@ -994,7 +994,7 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
           </button>
           <button
             onClick={() => onOpenAddCash('TRANSFER')}
-            className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 font-extrabold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
+            className="flex-1 min-w-[140px] whitespace-nowrap px-4 py-2 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 font-extrabold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer"
           >
             <ArrowLeftRight className="w-4 h-4 text-blue-400" />
             <span>⇄ Pemindahan Uang</span>
