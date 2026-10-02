@@ -985,11 +985,11 @@ export const AccountingView: React.FC<AccountingViewProps> = ({
             onClick={() => setActiveTab('CASH_BOOK')}
             className={`flex-1 min-w-[140px] whitespace-nowrap px-4 py-2 rounded-xl border font-extrabold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer ${
               activeTab === 'CASH_BOOK'
-                ? 'bg-zinc-700 text-white border-zinc-500'
-                : 'bg-zinc-800/80 hover:bg-zinc-700/80 text-zinc-300 border-zinc-700'
+                ? 'bg-zinc-800 text-white border-zinc-500 shadow-sm'
+                : 'bg-zinc-950 hover:bg-zinc-800 text-white border-zinc-700'
             }`}
           >
-            <Receipt className="w-4 h-4 text-emerald-400" />
+            <Receipt className="w-4 h-4 text-zinc-300" />
             <span>Buku Kas</span>
           </button>
           <button
