@@ -33,6 +33,7 @@ import { EditUnitModal } from './components/modals/EditUnitModal';
 import { ReadyModal } from './components/modals/ReadyModal';
 import { CheckoutModal } from './components/modals/CheckoutModal';
 import { ReceiptModal } from './components/modals/ReceiptModal';
+import { ReceiptPrintPreview } from './components/modals/ReceiptPrintPreview';
 import { AccDetailDayModal } from './components/modals/AccDetailDayModal';
 import { DiagnosisModal } from './components/modals/DiagnosisModal';
 import { AuthModal } from './components/modals/AuthModal';
@@ -459,6 +460,10 @@ export default function App() {
   const [diagnosisTicketId, setDiagnosisTicketId] = useState<string | null>(null);
   const [checkoutTicketId, setCheckoutTicketId] = useState<string | null>(null);
   const [receiptTicketId, setReceiptTicketId] = useState<string | null>(null);
+  const [printPreviewData, setPrintPreviewData] = useState<{
+    service: ServiceItem;
+    receiptType: 'INTAKE' | 'PICKUP';
+  } | null>(null);
   const [accDetailDate, setAccDetailDate] = useState<string | null>(null);
   const [isSyncingOffline, setIsSyncingOffline] = useState(false);
 
@@ -1216,10 +1221,12 @@ export default function App() {
 
   // Handlers: Instant Print
   const handleInstantPrint = (ticketId: string) => {
-    setReceiptTicketId(ticketId);
-    setTimeout(() => {
-      window.print();
-    }, 250);
+    const target = services.find((s) => s.id === ticketId);
+    if (!target) return;
+    const isBatal = target.status === 'BATAL';
+    const isPickupOrReady = target.status === 'SIAP' || target.status === 'DIAMBIL' || isBatal;
+    const type: 'INTAKE' | 'PICKUP' = isPickupOrReady ? 'PICKUP' : 'INTAKE';
+    setPrintPreviewData({ service: target, receiptType: type });
   };
 
   // Handlers: Cash Entries (Masukan, Keluarkan, & Pemindahan Uang)
@@ -1802,6 +1809,18 @@ export default function App() {
         service={activeReceiptTicket}
         storeSettings={storeSettings}
         onSendWhatsApp={handleSendWhatsAppReceipt}
+        onOpenPrintPreview={(service, type) =>
+          setPrintPreviewData({ service, receiptType: type })
+        }
+      />
+
+      {/* 7b. Receipt Print Preview Modal (58mm, 80mm, Custom, Bluetooth/System) */}
+      <ReceiptPrintPreview
+        isOpen={Boolean(printPreviewData)}
+        onClose={() => setPrintPreviewData(null)}
+        service={printPreviewData?.service || null}
+        storeSettings={storeSettings}
+        receiptType={printPreviewData?.receiptType}
       />
 
       {/* 8. Accounting Day Detail Modal */}
