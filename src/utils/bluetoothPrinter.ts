@@ -2,6 +2,8 @@
  * Web Bluetooth Direct ESC/POS Thermal Printing Utility.
  * Converts receipt DOM to 1-bit raster image (384 dots for 58mm, 576 dots for 80mm)
  * and transmits ESC/POS commands directly to compatible Bluetooth thermal printers.
+ *
+ * Implements persistent device binding to avoid re-scanning/discovery on every print.
  */
 import { toCanvas } from 'html-to-image';
 
@@ -10,9 +12,12 @@ export interface BluetoothPrintOptions {
   onStatusChange?: (status: string) => void;
 }
 
-export function isBluetoothSupported(): boolean {
-  return typeof navigator !== 'undefined' && 'bluetooth' in navigator;
+export interface SavedBluetoothPrinter {
+  id: string;
+  name: string;
 }
+
+export const STORAGE_KEY_BT_PRINTER = 'ordo_bluetooth_printer';
 
 // Common Bluetooth Low Energy (BLE) Thermal Printer Service UUIDs
 const PRINTER_SERVICES = [
@@ -23,8 +28,142 @@ const PRINTER_SERVICES = [
   'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
 ];
 
+// In-memory active BluetoothDevice reference for the current web session
+let cachedBluetoothDevice: any = null;
+
+export function isBluetoothSupported(): boolean {
+  return typeof navigator !== 'undefined' && 'bluetooth' in navigator;
+}
+
+export function getSavedBluetoothPrinter(): SavedBluetoothPrinter | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_BT_PRINTER);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export function saveBluetoothPrinter(printer: SavedBluetoothPrinter | null): void {
+  try {
+    if (printer) {
+      localStorage.setItem(STORAGE_KEY_BT_PRINTER, JSON.stringify(printer));
+    } else {
+      localStorage.removeItem(STORAGE_KEY_BT_PRINTER);
+    }
+  } catch {
+    // LocalStorage failsafe
+  }
+}
+
+export function clearSavedBluetoothPrinter(): void {
+  if (cachedBluetoothDevice?.gatt?.connected) {
+    try {
+      cachedBluetoothDevice.gatt.disconnect();
+    } catch {
+      // ignore
+    }
+  }
+  cachedBluetoothDevice = null;
+  saveBluetoothPrinter(null);
+}
+
 /**
- * Print receipt element directly to a Bluetooth thermal printer
+ * Explicit user-gesture device discovery (requestDevice).
+ * Only triggered on:
+ * 1. Initial connection ("Hubungkan Printer")
+ * 2. Changing printer ("Ganti Printer")
+ * 3. Re-pairing when connection lost/revoked ("Hubungkan Kembali")
+ */
+export async function pairBluetoothPrinter(
+  onStatusChange?: (status: string) => void
+): Promise<SavedBluetoothPrinter> {
+  if (!isBluetoothSupported()) {
+    throw new Error(
+      'Web Bluetooth tidak didukung pada browser/perangkat ini. Silakan gunakan Google Chrome/Microsoft Edge atau opsi "Print Sistem".'
+    );
+  }
+
+  onStatusChange?.('Mencari printer Bluetooth...');
+  let device: any;
+  try {
+    device = await (navigator as any).bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: PRINTER_SERVICES,
+    });
+  } catch (err: any) {
+    if (err.name === 'NotFoundError') {
+      throw new Error('Pencarian printer dibatalkan.');
+    }
+    throw new Error(`Gagal mendeteksi printer: ${err.message || err}`);
+  }
+
+  if (!device || !device.gatt) {
+    throw new Error('Perangkat Bluetooth yang dipilih tidak memiliki antarmuka GATT.');
+  }
+
+  onStatusChange?.('Menghubungkan ke printer...');
+  try {
+    if (!device.gatt.connected) {
+      await device.gatt.connect();
+    }
+  } catch (connErr: any) {
+    throw new Error(`Printer tidak dapat dihubungkan: ${connErr.message || connErr}`);
+  }
+
+  cachedBluetoothDevice = device;
+  const printerInfo: SavedBluetoothPrinter = {
+    id: device.id || 'bt-printer',
+    name: device.name || 'Printer Bluetooth',
+  };
+  saveBluetoothPrinter(printerInfo);
+
+  return printerInfo;
+}
+
+/**
+ * Attempts to retrieve an active or previously permitted BluetoothDevice WITHOUT triggering discovery scan.
+ */
+export async function getBluetoothDeviceWithoutDiscovery(): Promise<any> {
+  // 1. Check in-memory session cache first
+  if (cachedBluetoothDevice) {
+    return cachedBluetoothDevice;
+  }
+
+  const saved = getSavedBluetoothPrinter();
+
+  // 2. Check navigator.bluetooth.getDevices() if available in Chromium
+  if (
+    typeof navigator !== 'undefined' &&
+    'bluetooth' in navigator &&
+    typeof (navigator as any).bluetooth?.getDevices === 'function'
+  ) {
+    try {
+      const devices = await (navigator as any).bluetooth.getDevices();
+      if (devices && devices.length > 0) {
+        const match = saved?.id ? devices.find((d: any) => d.id === saved.id) : null;
+        const target = match || (saved ? devices[0] : null);
+        if (target) {
+          cachedBluetoothDevice = target;
+          return target;
+        }
+      }
+    } catch {
+      // getDevices not permitted or failed
+    }
+  }
+
+  if (saved) {
+    throw new Error('PRINTER_RECONNECT_NEEDED');
+  } else {
+    throw new Error('PRINTER_NOT_PAIRED');
+  }
+}
+
+/**
+ * Print receipt element directly to the selected Bluetooth thermal printer.
+ * Does NOT invoke discovery scan if a printer is already saved and accessible.
  */
 export async function printReceiptViaBluetooth(
   receiptElement: HTMLElement,
@@ -38,12 +177,75 @@ export async function printReceiptViaBluetooth(
     );
   }
 
-  // 1. Determine target raster dot width (384 dots for 58mm, 576 dots for 80mm)
-  const targetDotsWidth = paperWidthMm <= 60 ? 384 : 576;
+  // 1. Retrieve device reference without discovery scan
+  let device: any;
+  try {
+    device = await getBluetoothDeviceWithoutDiscovery();
+  } catch (err: any) {
+    if (err.message === 'PRINTER_RECONNECT_NEEDED' || err.message === 'PRINTER_NOT_PAIRED') {
+      throw err;
+    }
+    throw new Error('Printer tidak tersedia.');
+  }
+
+  onStatusChange?.('Menghubungkan ke printer...');
+
+  let server: any;
+  try {
+    server = device.gatt.connected ? device.gatt : await device.gatt.connect();
+  } catch {
+    cachedBluetoothDevice = null;
+    throw new Error('Printer tidak dapat dihubungkan.');
+  }
+
+  // 2. Discover writeable characteristic
+  let writeCharacteristic: any = null;
+  for (const serviceUuid of PRINTER_SERVICES) {
+    try {
+      const service = await server.getPrimaryService(serviceUuid);
+      const characteristics = await service.getCharacteristics();
+      for (const char of characteristics) {
+        if (char.properties.write || char.properties.writeWithoutResponse) {
+          writeCharacteristic = char;
+          break;
+        }
+      }
+      if (writeCharacteristic) break;
+    } catch {
+      // Continue to next candidate service
+    }
+  }
+
+  if (!writeCharacteristic) {
+    try {
+      const services = await server.getPrimaryServices();
+      for (const s of services) {
+        const chars = await s.getCharacteristics();
+        for (const c of chars) {
+          if (c.properties.write || c.properties.writeWithoutResponse) {
+            writeCharacteristic = c;
+            break;
+          }
+        }
+        if (writeCharacteristic) break;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!writeCharacteristic) {
+    throw new Error(
+      'Tidak ditemukan karakteristik tulis pada printer ini (printer mungkin membutuhkan koneksi Bluetooth Classic/SPP). Silakan gunakan "Print Sistem".'
+    );
+  }
 
   onStatusChange?.('Merender nota untuk printer thermal...');
 
-  // 2. Render receipt to HTML Canvas using html-to-image
+  // 3. Target raster dot width (384 dots for 58mm, 576 dots for 80mm)
+  const targetDotsWidth = paperWidthMm <= 60 ? 384 : 576;
+
+  // 4. Render receipt to HTML Canvas using html-to-image
   const canvas = await toCanvas(receiptElement, {
     backgroundColor: '#ffffff',
     pixelRatio: 1,
@@ -71,83 +273,12 @@ export async function printReceiptViaBluetooth(
     }
   }
 
-  onStatusChange?.('Mencari printer Bluetooth...');
-
-  // 3. Scan & request Bluetooth Device
-  let device: any;
-  try {
-    device = await (navigator as any).bluetooth.requestDevice({
-      acceptAllDevices: true,
-      optionalServices: PRINTER_SERVICES,
-    });
-  } catch (err: any) {
-    if (err.name === 'NotFoundError') {
-      throw new Error('Pencarian printer dibatalkan oleh pengguna.');
-    }
-    throw new Error(
-      `Gagal mendeteksi printer Bluetooth: ${err.message || err}. Gunakan "Print Sistem" sebagai alternatif.`
-    );
-  }
-
-  if (!device || !device.gatt) {
-    throw new Error('Perangkat Bluetooth yang dipilih tidak memiliki antarmuka GATT.');
-  }
-
-  onStatusChange?.(`Menghubungkan ke ${device.name || 'Printer Bluetooth'}...`);
-
-  const server = await device.gatt.connect();
-
-  // 4. Discover writeable characteristic
-  let writeCharacteristic: any = null;
-
-  for (const serviceUuid of PRINTER_SERVICES) {
-    try {
-      const service = await server.getPrimaryService(serviceUuid);
-      const characteristics = await service.getCharacteristics();
-      for (const char of characteristics) {
-        if (char.properties.write || char.properties.writeWithoutResponse) {
-          writeCharacteristic = char;
-          break;
-        }
-      }
-      if (writeCharacteristic) break;
-    } catch {
-      // Continue to next candidate service
-    }
-  }
-
-  if (!writeCharacteristic) {
-    // If not found in known list, try generic services
-    try {
-      const services = await server.getPrimaryServices();
-      for (const s of services) {
-        const chars = await s.getCharacteristics();
-        for (const c of chars) {
-          if (c.properties.write || c.properties.writeWithoutResponse) {
-            writeCharacteristic = c;
-            break;
-          }
-        }
-        if (writeCharacteristic) break;
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  if (!writeCharacteristic) {
-    device.gatt.disconnect();
-    throw new Error(
-      'Tidak ditemukan karakteristik tulis pada printer ini (printer mungkin membutuhkan koneksi Bluetooth Classic/SPP). Silakan gunakan "Print Sistem".'
-    );
-  }
-
   onStatusChange?.('Mengirim data nota ke printer...');
 
   // 5. Convert Canvas to ESC/POS Monochrome Raster Bit Image (GS v 0)
   const escPosData = convertCanvasToEscPosRaster(finalCanvas);
 
-  // 6. Transmit in chunks (512 bytes per packet to avoid BLE buffer overflow)
+  // 6. Transmit in chunks (256 bytes per packet to avoid BLE buffer overflow)
   const chunkSize = 256;
   for (let offset = 0; offset < escPosData.length; offset += chunkSize) {
     const chunk = escPosData.slice(offset, offset + chunkSize);
@@ -156,18 +287,10 @@ export async function printReceiptViaBluetooth(
     } else {
       await writeCharacteristic.writeValue(chunk);
     }
-    // Tiny delay between chunks to let printer buffer process
     await new Promise((res) => setTimeout(res, 25));
   }
 
   onStatusChange?.('Pencetakan selesai!');
-
-  // 7. Cleanup connection
-  setTimeout(() => {
-    if (device && device.gatt && device.gatt.connected) {
-      device.gatt.disconnect();
-    }
-  }, 1000);
 }
 
 /**

@@ -2,7 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ServiceItem, StoreSettings } from '../../types';
 import { ReceiptBody } from '../ReceiptBody';
 import { printReceiptViaIframe } from '../../utils/receiptPrint';
-import { isBluetoothSupported, printReceiptViaBluetooth } from '../../utils/bluetoothPrinter';
+import {
+  isBluetoothSupported,
+  printReceiptViaBluetooth,
+  getSavedBluetoothPrinter,
+  pairBluetoothPrinter,
+  SavedBluetoothPrinter,
+} from '../../utils/bluetoothPrinter';
 import {
   Printer,
   X,
@@ -38,7 +44,14 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
   const [printMethod, setPrintMethod] = useState<'system' | 'bluetooth'>('system');
   const [hasBluetoothSupport, setHasBluetoothSupport] = useState<boolean>(false);
 
-  // 3. Execution states
+  // 3. Bluetooth device management states
+  const [savedPrinter, setSavedPrinter] = useState<SavedBluetoothPrinter | null>(() =>
+    getSavedBluetoothPrinter()
+  );
+  const [isPairingBt, setIsPairingBt] = useState<boolean>(false);
+  const [btConnectionFailed, setBtConnectionFailed] = useState<boolean>(false);
+
+  // 4. Execution states
   const [isPrinting, setIsPrinting] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -46,9 +59,10 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
 
   const receiptRef = useRef<HTMLDivElement>(null);
 
-  // Load saved preference from localStorage
+  // Load saved preferences from localStorage
   useEffect(() => {
     setHasBluetoothSupport(isBluetoothSupported());
+    setSavedPrinter(getSavedBluetoothPrinter());
     try {
       const savedWidth = localStorage.getItem(STORAGE_KEY_PRINT_WIDTH);
       if (savedWidth) {
@@ -65,7 +79,7 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
     } catch {
       // LocalStorage access failsafe
     }
-  }, []);
+  }, [isOpen]);
 
   if (!isOpen || !service) return null;
 
@@ -89,6 +103,26 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
     }
   };
 
+  // Explicit device pairing: "Hubungkan Printer" / "Ganti Printer" / "Hubungkan Kembali"
+  const handleConnectPrinter = async () => {
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setIsPairingBt(true);
+    setStatusMessage('Mencari printer Bluetooth...');
+    try {
+      const printer = await pairBluetoothPrinter((status) => setStatusMessage(status));
+      setSavedPrinter(printer);
+      setBtConnectionFailed(false);
+      setSuccessMessage(`Berhasil terhubung ke ${printer.name}`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Gagal mendeteksi printer Bluetooth.');
+    } finally {
+      setIsPairingBt(false);
+      setStatusMessage('');
+    }
+  };
+
   const handlePrint = async () => {
     if (!receiptRef.current) return;
     setErrorMessage(null);
@@ -97,16 +131,37 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
 
     try {
       if (printMethod === 'bluetooth') {
-        setStatusMessage('Mempersiapkan koneksi Bluetooth...');
-        await printReceiptViaBluetooth(receiptRef.current, {
-          paperWidthMm: activeWidthMm,
-          onStatusChange: (status) => setStatusMessage(status),
-        });
-        setSuccessMessage('Nota berhasil dikirim ke printer Bluetooth!');
-        setTimeout(() => {
+        if (!savedPrinter) {
+          setIsPrinting(false);
+          setErrorMessage('Belum ada printer Bluetooth. Silakan hubungkan printer terlebih dahulu.');
+          return;
+        }
+
+        setStatusMessage('Menghubungkan ke printer...');
+        try {
+          await printReceiptViaBluetooth(receiptRef.current, {
+            paperWidthMm: activeWidthMm,
+            onStatusChange: (status) => setStatusMessage(status),
+          });
+          setBtConnectionFailed(false);
+          setSuccessMessage('Nota berhasil dikirim ke printer Bluetooth!');
+          setTimeout(() => {
+            setIsPrinting(false);
+            setStatusMessage('');
+          }, 1500);
+        } catch (btErr: any) {
           setIsPrinting(false);
           setStatusMessage('');
-        }, 1500);
+          setBtConnectionFailed(true);
+          if (
+            btErr.message === 'PRINTER_RECONNECT_NEEDED' ||
+            btErr.message === 'PRINTER_NOT_PAIRED'
+          ) {
+            setErrorMessage('Printer tidak tersedia. Silakan hubungkan kembali.');
+          } else {
+            setErrorMessage(btErr.message || 'Printer tidak dapat dihubungkan.');
+          }
+        }
       } else {
         // System Print (via isolated iframe with zero margins)
         setStatusMessage('Membuka dialog pencetakan...');
@@ -136,8 +191,8 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-xs animate-in fade-in duration-150"
       onClick={(e) => {
-        // Close on backdrop click unless printing
-        if (e.target === e.currentTarget && !isPrinting) {
+        // Close on backdrop click unless printing or pairing
+        if (e.target === e.currentTarget && !isPrinting && !isPairingBt) {
           onClose();
         }
       }}
@@ -160,7 +215,7 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
           </div>
           <button
             onClick={onClose}
-            disabled={isPrinting}
+            disabled={isPrinting || isPairingBt}
             className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer disabled:opacity-50"
           >
             <X className="w-5 h-5" />
@@ -244,6 +299,7 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
                   onClick={() => {
                     setPrintMethod('system');
                     setErrorMessage(null);
+                    setBtConnectionFailed(false);
                   }}
                   className={`p-2.5 rounded-lg border text-left flex items-start gap-2.5 transition-all cursor-pointer ${
                     printMethod === 'system'
@@ -293,26 +349,108 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
                   </div>
                 </button>
               </div>
+
+              {/* Bluetooth Device Management Box */}
+              {printMethod === 'bluetooth' && (
+                <div className="pt-2 border-t border-zinc-800/80 space-y-2">
+                  {btConnectionFailed ? (
+                    /* Error State: "Printer tidak tersedia" with [Hubungkan Kembali] & [Gunakan Print Sistem] */
+                    <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs space-y-2">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                        <span className="font-bold">Printer tidak tersedia</span>
+                      </div>
+                      <p className="text-[11px] text-rose-300/90 leading-tight">
+                        {errorMessage || 'Printer tidak dapat dihubungkan. Pastikan printer dalam keadaan menyala dan berada dalam jangkauan.'}
+                      </p>
+                      <div className="flex items-center gap-2 pt-1 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={handleConnectPrinter}
+                          disabled={isPairingBt || isPrinting}
+                          className="px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                        >
+                          {isPairingBt ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Bluetooth className="w-3.5 h-3.5" />
+                          )}
+                          <span>Hubungkan Kembali</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPrintMethod('system');
+                            setBtConnectionFailed(false);
+                            setErrorMessage(null);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Printer className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Gunakan Print Sistem</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : savedPrinter ? (
+                    /* Saved State: "Printer Bluetooth", "🟢 [Nama Printer]", [ Ganti Printer ] */
+                    <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800 flex items-center justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">
+                          Printer Bluetooth
+                        </span>
+                        <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]"></span>
+                          <span className="truncate max-w-[220px]">{savedPrinter.name}</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleConnectPrinter}
+                        disabled={isPrinting || isPairingBt}
+                        className="px-2.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 text-[11px] font-bold transition-colors cursor-pointer shrink-0 flex items-center gap-1"
+                      >
+                        {isPairingBt ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : null}
+                        <span>Ganti Printer</span>
+                      </button>
+                    </div>
+                  ) : (
+                    /* Unconnected State: "Belum ada printer Bluetooth", [Hubungkan Printer] */
+                    <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800 flex items-center justify-between gap-3">
+                      <div>
+                        <span className="text-xs text-zinc-300 font-bold block">
+                          Belum ada printer Bluetooth
+                        </span>
+                        <span className="text-[10px] text-zinc-500">
+                          Hubungkan printer thermal Anda sekali untuk menyimpan
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleConnectPrinter}
+                        disabled={isPrinting || isPairingBt}
+                        className="px-3 py-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 text-xs font-bold transition-colors cursor-pointer shrink-0 flex items-center gap-1.5"
+                      >
+                        {isPairingBt ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Bluetooth className="w-3.5 h-3.5" />
+                        )}
+                        <span>Hubungkan Printer</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Error & Warning Alert with Fallback */}
-            {errorMessage && (
+            {/* Error & Warning Alert (General / Non-BT specific) */}
+            {errorMessage && !btConnectionFailed && (
               <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
                 <div className="space-y-1">
                   <p className="leading-tight">{errorMessage}</p>
-                  {printMethod === 'bluetooth' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPrintMethod('system');
-                        setErrorMessage(null);
-                      }}
-                      className="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 underline cursor-pointer"
-                    >
-                      Beralih ke Print Sistem
-                    </button>
-                  )}
                 </div>
               </div>
             )}
@@ -363,10 +501,15 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
         {/* Modal Bottom Actions */}
         <div className="px-5 py-3.5 border-t border-zinc-800 bg-zinc-900 flex items-center justify-between gap-3 shrink-0">
           <div className="text-[11px] text-zinc-400">
-            {isPrinting ? (
+            {isPairingBt ? (
+              <span className="flex items-center gap-1.5 text-blue-400 font-bold">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>{statusMessage || 'Mencari printer Bluetooth...'}</span>
+              </span>
+            ) : isPrinting ? (
               <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>{statusMessage || 'Sedang memproses...'}</span>
+                <span>{statusMessage || 'Menghubungkan ke printer...'}</span>
               </span>
             ) : (
               <span>Siap mencetak ({activeWidthMm}mm)</span>
@@ -377,7 +520,7 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
             <button
               type="button"
               onClick={onClose}
-              disabled={isPrinting}
+              disabled={isPrinting || isPairingBt}
               className="px-4 py-2 rounded-xl bg-zinc-950 hover:bg-zinc-800 text-white font-bold text-xs border border-zinc-700 transition-colors cursor-pointer disabled:opacity-50"
             >
               Batal
@@ -385,7 +528,7 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
             <button
               type="button"
               onClick={handlePrint}
-              disabled={isPrinting}
+              disabled={isPrinting || isPairingBt}
               className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-xs shadow-md transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
             >
               {isPrinting ? (
