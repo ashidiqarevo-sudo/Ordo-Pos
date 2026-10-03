@@ -149,7 +149,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 leading-tight">
                 <span className="text-sm font-black tracking-wider text-white uppercase shrink-0">
-                  ORDO POS
+                  ORDO
                 </span>
                 <span className="text-emerald-500 font-bold text-xs">|</span>
                 <span
@@ -159,8 +159,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {storeSettings.storeName || 'ORDO POS SERVICE'}
                 </span>
               </div>
-              <p className="text-[11px] text-zinc-400 font-medium truncate mt-0.5">
-                <span className="text-emerald-400 font-mono font-bold">@{storeSettings.storeUsername || currentUser?.storeUsername || 'jayaphone'}</span> • {storeSettings.storeTagline || 'Pusat Servis HP'}
+              <p className="text-[11px] text-zinc-400 font-medium leading-snug mt-1 break-words">
+                Solusi sederhana untuk pemilik konter servis HP
               </p>
             </div>
           </div>
@@ -256,8 +256,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className="text-[11px] font-bold text-white truncate block">
                 {storeSettings.ownerName || currentUser.name || 'Pemilik Konter'}
               </span>
-              <span className="text-[10px] text-zinc-400 truncate block">
-                <span className="font-mono text-emerald-400">@{storeSettings.storeUsername || currentUser.storeUsername || 'jayaphone'}</span> • {currentUser.email}
+              <span className="text-[10px] text-zinc-400 font-mono truncate block mt-0.5">
+                @{storeSettings.storeUsername || currentUser.storeUsername || 'jayaphone'}
+              </span>
+              <span className="text-[10px] text-emerald-400 font-medium truncate block">
+                {currentUser.email}
               </span>
             </div>
           </div>
@@ -269,9 +272,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className="hidden lg:inline font-bold text-sm text-zinc-100">
               Sistem Aktif <span className="font-mono text-xs text-emerald-400 font-black ml-1 px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 inline-block align-middle">V0.1</span>
             </span>
-          </span>
-          <span className="text-zinc-400 text-xs hidden lg:inline font-medium">
-            Siap Dipakai
           </span>
         </div>
       </div>

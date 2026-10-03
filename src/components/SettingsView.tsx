@@ -582,6 +582,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3.5 py-2 text-white text-xs focus:bg-black focus:border-emerald-500 focus:outline-none leading-relaxed"
               />
             </div>
+
+            <div className="sm:col-span-2 flex justify-end pt-3 border-t border-zinc-800/80">
+              <button
+                type="submit"
+                className="px-6 py-2.5 rounded-xl bg-emerald-100 hover:bg-emerald-200/90 dark:bg-emerald-950/80 dark:hover:bg-emerald-900/90 text-emerald-800 dark:text-emerald-400 border border-emerald-400/80 dark:border-emerald-700/60 font-bold text-xs shadow-xs flex items-center gap-2 active:scale-95 transition-all cursor-pointer"
+              >
+                <Save className="w-4 h-4 text-emerald-800 dark:text-emerald-400" />
+                <span>Simpan Pengaturan</span>
+              </button>
+            </div>
           </div>
         </div>
 
