@@ -1,9 +1,9 @@
 /**
- * Web Bluetooth Direct ESC/POS Thermal Printing Utility.
- * Converts receipt DOM to 1-bit raster image (384 dots for 58mm, 576 dots for 80mm)
- * and transmits ESC/POS commands directly to compatible Bluetooth thermal printers.
+ * Web Bluetooth Direct ESC/POS & Android Classic/SPP Bridge Thermal Printing Utility.
  *
- * Implements persistent device binding to avoid re-scanning/discovery on every print.
+ * Supports:
+ * 1. Direct Web Bluetooth (BLE / GATT Profile) with persistent device caching
+ * 2. Android Bluetooth Classic/SPP Bridge via RawBT intent protocol
  */
 import { toCanvas } from 'html-to-image';
 
@@ -18,6 +18,7 @@ export interface SavedBluetoothPrinter {
 }
 
 export const STORAGE_KEY_BT_PRINTER = 'ordo_bluetooth_printer';
+export const STORAGE_KEY_PRINT_METHOD = 'ordo_print_method';
 
 // Common Bluetooth Low Energy (BLE) Thermal Printer Service UUIDs
 const PRINTER_SERVICES = [
@@ -33,6 +34,10 @@ let cachedBluetoothDevice: any = null;
 
 export function isBluetoothSupported(): boolean {
   return typeof navigator !== 'undefined' && 'bluetooth' in navigator;
+}
+
+export function isAndroidDevice(): boolean {
+  return typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent || '');
 }
 
 export function getSavedBluetoothPrinter(): SavedBluetoothPrinter | null {
@@ -70,7 +75,7 @@ export function clearSavedBluetoothPrinter(): void {
 }
 
 /**
- * Explicit user-gesture device discovery (requestDevice).
+ * Explicit user-gesture device discovery (requestDevice) for BLE.
  * Only triggered on:
  * 1. Initial connection ("Hubungkan Printer")
  * 2. Changing printer ("Ganti Printer")
@@ -81,11 +86,11 @@ export async function pairBluetoothPrinter(
 ): Promise<SavedBluetoothPrinter> {
   if (!isBluetoothSupported()) {
     throw new Error(
-      'Web Bluetooth tidak didukung pada browser/perangkat ini. Silakan gunakan Google Chrome/Microsoft Edge atau opsi "Print Sistem".'
+      'Web Bluetooth tidak didukung pada browser/perangkat ini. Silakan gunakan Google Chrome/Microsoft Edge atau gunakan opsi Print Sistem / Android Bridge.'
     );
   }
 
-  onStatusChange?.('Mencari printer Bluetooth...');
+  onStatusChange?.('Mencari printer Bluetooth BLE...');
   let device: any;
   try {
     device = await (navigator as any).bluetooth.requestDevice({
@@ -126,14 +131,12 @@ export async function pairBluetoothPrinter(
  * Attempts to retrieve an active or previously permitted BluetoothDevice WITHOUT triggering discovery scan.
  */
 export async function getBluetoothDeviceWithoutDiscovery(): Promise<any> {
-  // 1. Check in-memory session cache first
   if (cachedBluetoothDevice) {
     return cachedBluetoothDevice;
   }
 
   const saved = getSavedBluetoothPrinter();
 
-  // 2. Check navigator.bluetooth.getDevices() if available in Chromium
   if (
     typeof navigator !== 'undefined' &&
     'bluetooth' in navigator &&
@@ -162,7 +165,108 @@ export async function getBluetoothDeviceWithoutDiscovery(): Promise<any> {
 }
 
 /**
- * Print receipt element directly to the selected Bluetooth thermal printer.
+ * Renders HTML receipt element to 1-bit monochrome ESC/POS raster data.
+ */
+export async function renderReceiptToEscPosRaster(
+  receiptElement: HTMLElement,
+  paperWidthMm: number
+): Promise<Uint8Array> {
+  const targetDotsWidth = paperWidthMm <= 60 ? 384 : 576;
+
+  const canvas = await toCanvas(receiptElement, {
+    backgroundColor: '#ffffff',
+    pixelRatio: 1,
+    style: {
+      width: `${targetDotsWidth}px`,
+      maxWidth: `${targetDotsWidth}px`,
+      margin: '0',
+      padding: '4px',
+    },
+  });
+
+  let finalCanvas = canvas;
+  if (canvas.width !== targetDotsWidth) {
+    const resizedCanvas = document.createElement('canvas');
+    resizedCanvas.width = targetDotsWidth;
+    const scale = targetDotsWidth / canvas.width;
+    resizedCanvas.height = Math.round(canvas.height * scale);
+    const ctx = resizedCanvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, resizedCanvas.width, resizedCanvas.height);
+      ctx.drawImage(canvas, 0, 0, resizedCanvas.width, resizedCanvas.height);
+      finalCanvas = resizedCanvas;
+    }
+  }
+
+  return convertCanvasToEscPosRaster(finalCanvas);
+}
+
+/**
+ * Converts a Canvas to standard ESC/POS GS v 0 1-bit raster data
+ */
+function convertCanvasToEscPosRaster(canvas: HTMLCanvasElement): Uint8Array {
+  const width = canvas.width;
+  const height = canvas.height;
+  const ctx = canvas.getContext('2d')!;
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const rgba = imgData.data;
+
+  const widthBytes = Math.ceil(width / 8);
+  const rasterData: number[] = [];
+
+  // ESC @ (Initialize printer)
+  rasterData.push(0x1b, 0x40);
+
+  // GS v 0 0 xL xH yL yH
+  const xL = widthBytes % 256;
+  const xH = Math.floor(widthBytes / 256);
+  const yL = height % 256;
+  const yH = Math.floor(height / 256);
+
+  rasterData.push(0x1d, 0x76, 0x30, 0x00, xL, xH, yL, yH);
+
+  for (let y = 0; y < height; y++) {
+    for (let xByte = 0; xByte < widthBytes; xByte++) {
+      let byteVal = 0;
+      for (let bit = 0; bit < 8; bit++) {
+        const x = xByte * 8 + bit;
+        if (x < width) {
+          const idx = (y * width + x) * 4;
+          const r = rgba[idx];
+          const g = rgba[idx + 1];
+          const b = rgba[idx + 2];
+          const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+          if (luminance < 160) {
+            byteVal |= 1 << (7 - bit);
+          }
+        }
+      }
+      rasterData.push(byteVal);
+    }
+  }
+
+  // Line feeds and cut
+  rasterData.push(0x0a, 0x0a, 0x0a, 0x0a);
+  rasterData.push(0x1d, 0x56, 0x42, 0x00);
+
+  return new Uint8Array(rasterData);
+}
+
+/**
+ * Helper to encode binary Uint8Array into standard Base64 string
+ */
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return window.btoa(binary);
+}
+
+/**
+ * Print receipt directly via Web Bluetooth (BLE).
  * Does NOT invoke discovery scan if a printer is already saved and accessible.
  */
 export async function printReceiptViaBluetooth(
@@ -173,7 +277,7 @@ export async function printReceiptViaBluetooth(
 
   if (!isBluetoothSupported()) {
     throw new Error(
-      'Web Bluetooth tidak didukung pada browser/perangkat ini. Silakan gunakan opsi "Print Sistem".'
+      'Web Bluetooth tidak didukung pada browser/perangkat ini. Silakan gunakan opsi "Print Sistem" atau "Android Classic Bridge".'
     );
   }
 
@@ -236,49 +340,17 @@ export async function printReceiptViaBluetooth(
 
   if (!writeCharacteristic) {
     throw new Error(
-      'Tidak ditemukan karakteristik tulis pada printer ini (printer mungkin membutuhkan koneksi Bluetooth Classic/SPP). Silakan gunakan "Print Sistem".'
+      'Tidak ditemukan karakteristik tulis pada printer ini (printer mungkin membutuhkan koneksi Bluetooth Classic/SPP). Silakan gunakan opsi "Android Classic Bridge" atau "Print Sistem".'
     );
   }
 
   onStatusChange?.('Merender nota untuk printer thermal...');
 
-  // 3. Target raster dot width (384 dots for 58mm, 576 dots for 80mm)
-  const targetDotsWidth = paperWidthMm <= 60 ? 384 : 576;
-
-  // 4. Render receipt to HTML Canvas using html-to-image
-  const canvas = await toCanvas(receiptElement, {
-    backgroundColor: '#ffffff',
-    pixelRatio: 1,
-    style: {
-      width: `${targetDotsWidth}px`,
-      maxWidth: `${targetDotsWidth}px`,
-      margin: '0',
-      padding: '4px',
-    },
-  });
-
-  // Scale or ensure canvas matches exact target dots width
-  let finalCanvas = canvas;
-  if (canvas.width !== targetDotsWidth) {
-    const resizedCanvas = document.createElement('canvas');
-    resizedCanvas.width = targetDotsWidth;
-    const scale = targetDotsWidth / canvas.width;
-    resizedCanvas.height = Math.round(canvas.height * scale);
-    const ctx = resizedCanvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, resizedCanvas.width, resizedCanvas.height);
-      ctx.drawImage(canvas, 0, 0, resizedCanvas.width, resizedCanvas.height);
-      finalCanvas = resizedCanvas;
-    }
-  }
+  const escPosData = await renderReceiptToEscPosRaster(receiptElement, paperWidthMm);
 
   onStatusChange?.('Mengirim data nota ke printer...');
 
-  // 5. Convert Canvas to ESC/POS Monochrome Raster Bit Image (GS v 0)
-  const escPosData = convertCanvasToEscPosRaster(finalCanvas);
-
-  // 6. Transmit in chunks (256 bytes per packet to avoid BLE buffer overflow)
+  // Transmit in chunks (256 bytes per packet)
   const chunkSize = 256;
   for (let offset = 0; offset < escPosData.length; offset += chunkSize) {
     const chunk = escPosData.slice(offset, offset + chunkSize);
@@ -294,55 +366,26 @@ export async function printReceiptViaBluetooth(
 }
 
 /**
- * Converts a Canvas to standard ESC/POS GS v 0 1-bit raster data
+ * Print receipt via Android RawBT Intent Protocol.
+ * For Bluetooth Classic / SPP and USB thermal printers on Android.
  */
-function convertCanvasToEscPosRaster(canvas: HTMLCanvasElement): Uint8Array {
-  const width = canvas.width;
-  const height = canvas.height;
-  const ctx = canvas.getContext('2d')!;
-  const imgData = ctx.getImageData(0, 0, width, height);
-  const rgba = imgData.data;
+export async function printReceiptViaRawBt(
+  receiptElement: HTMLElement,
+  paperWidthMm: number,
+  onStatusChange?: (status: string) => void
+): Promise<void> {
+  onStatusChange?.('Merender nota untuk printer thermal...');
 
-  // ESC/POS raster requires width in bytes: width / 8
-  const widthBytes = Math.ceil(width / 8);
-  const rasterData: number[] = [];
+  const escPosData = await renderReceiptToEscPosRaster(receiptElement, paperWidthMm);
+  const base64Data = uint8ArrayToBase64(escPosData);
 
-  // ESC @ (Initialize printer)
-  rasterData.push(0x1b, 0x40);
+  onStatusChange?.('Meneruskan nota ke printer Android...');
 
-  // GS v 0 0 xL xH yL yH
-  const xL = widthBytes % 256;
-  const xH = Math.floor(widthBytes / 256);
-  const yL = height % 256;
-  const yH = Math.floor(height / 256);
+  // RawBT Android Intent URL
+  const intentUrl = `intent:base64,${base64Data}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
 
-  rasterData.push(0x1d, 0x76, 0x30, 0x00, xL, xH, yL, yH);
+  // Open RawBT Intent
+  window.location.href = intentUrl;
 
-  for (let y = 0; y < height; y++) {
-    for (let xByte = 0; xByte < widthBytes; xByte++) {
-      let byteVal = 0;
-      for (let bit = 0; bit < 8; bit++) {
-        const x = xByte * 8 + bit;
-        if (x < width) {
-          const idx = (y * width + x) * 4;
-          const r = rgba[idx];
-          const g = rgba[idx + 1];
-          const b = rgba[idx + 2];
-          // Grayscale luminance
-          const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-          // In ESC/POS raster: 1 = black dot, 0 = white dot
-          if (luminance < 160) {
-            byteVal |= 1 << (7 - bit);
-          }
-        }
-      }
-      rasterData.push(byteVal);
-    }
-  }
-
-  // Line feeds and paper cut command (GS V 66 0)
-  rasterData.push(0x0a, 0x0a, 0x0a, 0x0a);
-  rasterData.push(0x1d, 0x56, 0x42, 0x00);
-
-  return new Uint8Array(rasterData);
+  onStatusChange?.('Nota berhasil diteruskan ke Android!');
 }

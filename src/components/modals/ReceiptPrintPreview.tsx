@@ -4,10 +4,13 @@ import { ReceiptBody } from '../ReceiptBody';
 import { printReceiptViaIframe } from '../../utils/receiptPrint';
 import {
   isBluetoothSupported,
+  isAndroidDevice,
   printReceiptViaBluetooth,
+  printReceiptViaRawBt,
   getSavedBluetoothPrinter,
   pairBluetoothPrinter,
   SavedBluetoothPrinter,
+  STORAGE_KEY_PRINT_METHOD,
 } from '../../utils/bluetoothPrinter';
 import {
   Printer,
@@ -17,6 +20,8 @@ import {
   AlertTriangle,
   Loader2,
   CheckCircle,
+  ExternalLink,
+  Smartphone,
 } from 'lucide-react';
 
 interface ReceiptPrintPreviewProps {
@@ -40,11 +45,12 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
   const [sizePreset, setSizePreset] = useState<'58' | '80' | 'custom'>('58');
   const [customWidthMm, setCustomWidthMm] = useState<number>(70);
 
-  // 2. Print method states (System Print or Web Bluetooth)
-  const [printMethod, setPrintMethod] = useState<'system' | 'bluetooth'>('system');
+  // 2. Print method states (System, BLE, or Android Classic RawBT)
+  const [printMethod, setPrintMethod] = useState<'system' | 'bluetooth_ble' | 'bluetooth_rawbt'>('system');
   const [hasBluetoothSupport, setHasBluetoothSupport] = useState<boolean>(false);
+  const [isAndroid, setIsAndroid] = useState<boolean>(false);
 
-  // 3. Bluetooth device management states
+  // 3. Bluetooth BLE device management states
   const [savedPrinter, setSavedPrinter] = useState<SavedBluetoothPrinter | null>(() =>
     getSavedBluetoothPrinter()
   );
@@ -62,8 +68,12 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
   // Load saved preferences from localStorage
   useEffect(() => {
     setHasBluetoothSupport(isBluetoothSupported());
+    const android = isAndroidDevice();
+    setIsAndroid(android);
     setSavedPrinter(getSavedBluetoothPrinter());
+
     try {
+      // Restore width
       const savedWidth = localStorage.getItem(STORAGE_KEY_PRINT_WIDTH);
       if (savedWidth) {
         if (savedWidth === '58' || savedWidth === '80') {
@@ -75,6 +85,19 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
             setCustomWidthMm(num);
           }
         }
+      }
+
+      // Restore method
+      const savedMethod = localStorage.getItem(STORAGE_KEY_PRINT_METHOD);
+      if (
+        savedMethod === 'system' ||
+        savedMethod === 'bluetooth_ble' ||
+        savedMethod === 'bluetooth_rawbt'
+      ) {
+        setPrintMethod(savedMethod);
+      } else if (android) {
+        // Sensible default for Android if not previously chosen
+        setPrintMethod('bluetooth_rawbt');
       }
     } catch {
       // LocalStorage access failsafe
@@ -103,12 +126,24 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
     }
   };
 
-  // Explicit device pairing: "Hubungkan Printer" / "Ganti Printer" / "Hubungkan Kembali"
-  const handleConnectPrinter = async () => {
+  // Change and persist print method
+  const handleMethodChange = (method: 'system' | 'bluetooth_ble' | 'bluetooth_rawbt') => {
+    setPrintMethod(method);
+    setErrorMessage(null);
+    setBtConnectionFailed(false);
+    try {
+      localStorage.setItem(STORAGE_KEY_PRINT_METHOD, method);
+    } catch {
+      // ignore
+    }
+  };
+
+  // Explicit BLE pairing: "Hubungkan Printer" / "Ganti Printer" / "Hubungkan Kembali"
+  const handleConnectBlePrinter = async () => {
     setErrorMessage(null);
     setSuccessMessage(null);
     setIsPairingBt(true);
-    setStatusMessage('Mencari printer Bluetooth...');
+    setStatusMessage('Mencari printer Bluetooth BLE...');
     try {
       const printer = await pairBluetoothPrinter((status) => setStatusMessage(status));
       setSavedPrinter(printer);
@@ -130,10 +165,22 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
     setIsPrinting(true);
 
     try {
-      if (printMethod === 'bluetooth') {
+      if (printMethod === 'bluetooth_rawbt') {
+        // Method B: Android Bluetooth Classic / SPP via RawBT
+        setStatusMessage('Menyiapkan nota untuk RawBT...');
+        await printReceiptViaRawBt(receiptRef.current, activeWidthMm, (status) =>
+          setStatusMessage(status)
+        );
+        setSuccessMessage('Nota berhasil dikirim ke printer via RawBT!');
+        setTimeout(() => {
+          setIsPrinting(false);
+          setStatusMessage('');
+        }, 1500);
+      } else if (printMethod === 'bluetooth_ble') {
+        // Method A: Direct Web Bluetooth (BLE)
         if (!savedPrinter) {
           setIsPrinting(false);
-          setErrorMessage('Belum ada printer Bluetooth. Silakan hubungkan printer terlebih dahulu.');
+          setErrorMessage('Belum ada printer BLE terhubung. Silakan hubungkan printer terlebih dahulu.');
           return;
         }
 
@@ -163,7 +210,7 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
           }
         }
       } else {
-        // System Print (via isolated iframe with zero margins)
+        // Method C: System Print (via isolated iframe with zero margins)
         setStatusMessage('Membuka dialog pencetakan...');
         await printReceiptViaIframe(receiptRef.current, {
           paperWidthMm: activeWidthMm,
@@ -191,7 +238,6 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-xs animate-in fade-in duration-150"
       onClick={(e) => {
-        // Close on backdrop click unless printing or pairing
         if (e.target === e.currentTarget && !isPrinting && !isPairingBt) {
           onClose();
         }
@@ -209,7 +255,7 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
                 Print Preview Nota
               </h3>
               <p className="text-[11px] text-zinc-400">
-                Pilih ukuran kertas thermal dan metode cetak yang diinginkan
+                Pilih ukuran kertas thermal dan metode cetak yang sesuai
               </p>
             </div>
           </div>
@@ -224,7 +270,7 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
 
         {/* Modal Body: Single Page Layout (Top Controls + Live Preview) */}
         <div className="p-4 sm:p-5 flex-1 overflow-y-auto space-y-4">
-          {/* Controls Bar: Paper Size & Print Method */}
+          {/* Controls Bar */}
           <div className="bg-zinc-900/90 border border-zinc-800 rounded-xl p-3.5 space-y-3">
             {/* 1. Paper Size Selector */}
             <div className="space-y-1.5">
@@ -293,68 +339,93 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
                 <Printer className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Metode Cetak:</span>
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {/* Method 1: Android Bluetooth Classic (SPP) via RawBT */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setPrintMethod('system');
-                    setErrorMessage(null);
-                    setBtConnectionFailed(false);
-                  }}
-                  className={`p-2.5 rounded-lg border text-left flex items-start gap-2.5 transition-all cursor-pointer ${
+                  onClick={() => handleMethodChange('bluetooth_rawbt')}
+                  className={`p-2.5 rounded-lg border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                    printMethod === 'bluetooth_rawbt'
+                      ? 'bg-emerald-500/10 border-emerald-500/50 text-white shadow-xs'
+                      : 'bg-zinc-950 hover:bg-zinc-800/80 border-zinc-800 text-zinc-300'
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <Smartphone className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <span>BT Classic (Android)</span>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold">
+                          RawBT
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-zinc-400 mt-0.5 leading-tight">
+                        Untuk printer Bluetooth Classic konter HP & tablet Android
+                      </p>
+                    </div>
+                  </div>
+                </button>
+
+                {/* Method 2: Direct Web Bluetooth (BLE) */}
+                <button
+                  type="button"
+                  onClick={() => handleMethodChange('bluetooth_ble')}
+                  className={`p-2.5 rounded-lg border text-left flex flex-col justify-between transition-all cursor-pointer ${
+                    printMethod === 'bluetooth_ble'
+                      ? 'bg-emerald-500/10 border-emerald-500/50 text-white shadow-xs'
+                      : 'bg-zinc-950 hover:bg-zinc-800/80 border-zinc-800 text-zinc-300'
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <Bluetooth className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <span>Bluetooth BLE</span>
+                        {!hasBluetoothSupport && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300">
+                            Chrome/Edge
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-zinc-400 mt-0.5 leading-tight">
+                        Direct Web Bluetooth untuk printer thermal BLE (GATT)
+                      </p>
+                    </div>
+                  </div>
+                </button>
+
+                {/* Method 3: System Print */}
+                <button
+                  type="button"
+                  onClick={() => handleMethodChange('system')}
+                  className={`p-2.5 rounded-lg border text-left flex flex-col justify-between transition-all cursor-pointer ${
                     printMethod === 'system'
                       ? 'bg-emerald-500/10 border-emerald-500/50 text-white shadow-xs'
                       : 'bg-zinc-950 hover:bg-zinc-800/80 border-zinc-800 text-zinc-300'
                   }`}
                 >
-                  <Printer className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <div>
-                    <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <span>Print Sistem</span>
-                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-300">
-                        Rekomendasi
-                      </span>
-                    </div>
-                    <p className="text-[10px] text-zinc-400 mt-0.5 leading-tight">
-                      Kompatibel untuk thermal USB, WiFi, printer OS, dan Save as PDF
-                    </p>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPrintMethod('bluetooth');
-                    setErrorMessage(null);
-                  }}
-                  className={`p-2.5 rounded-lg border text-left flex items-start gap-2.5 transition-all cursor-pointer ${
-                    printMethod === 'bluetooth'
-                      ? 'bg-emerald-500/10 border-emerald-500/50 text-white shadow-xs'
-                      : 'bg-zinc-950 hover:bg-zinc-800/80 border-zinc-800 text-zinc-300'
-                  }`}
-                >
-                  <Bluetooth className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-                  <div>
-                    <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <span>Direct Bluetooth</span>
-                      {!hasBluetoothSupport && (
-                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300">
-                          Perlu Chrome/Edge
+                  <div className="flex items-start gap-2">
+                    <Printer className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <span>Print Sistem</span>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-300">
+                          Universal
                         </span>
-                      )}
+                      </div>
+                      <p className="text-[10px] text-zinc-400 mt-0.5 leading-tight">
+                        Thermal USB, WiFi, dialog cetak OS, dan PDF
+                      </p>
                     </div>
-                    <p className="text-[10px] text-zinc-400 mt-0.5 leading-tight">
-                      Kirim langsung ke thermal BLE via Web Bluetooth tanpa driver OS
-                    </p>
                   </div>
                 </button>
               </div>
 
-              {/* Bluetooth Device Management Box */}
-              {printMethod === 'bluetooth' && (
+              {/* Sub-Panel: Method A (BLE) Details */}
+              {printMethod === 'bluetooth_ble' && (
                 <div className="pt-2 border-t border-zinc-800/80 space-y-2">
                   {btConnectionFailed ? (
-                    /* Error State: "Printer tidak tersedia" with [Hubungkan Kembali] & [Gunakan Print Sistem] */
                     <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs space-y-2">
                       <div className="flex items-center gap-2">
                         <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
@@ -366,24 +437,16 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
                       <div className="flex items-center gap-2 pt-1 flex-wrap">
                         <button
                           type="button"
-                          onClick={handleConnectPrinter}
+                          onClick={handleConnectBlePrinter}
                           disabled={isPairingBt || isPrinting}
                           className="px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
                         >
-                          {isPairingBt ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <Bluetooth className="w-3.5 h-3.5" />
-                          )}
+                          {isPairingBt ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bluetooth className="w-3.5 h-3.5" />}
                           <span>Hubungkan Kembali</span>
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            setPrintMethod('system');
-                            setBtConnectionFailed(false);
-                            setErrorMessage(null);
-                          }}
+                          onClick={() => handleMethodChange('system')}
                           className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
                         >
                           <Printer className="w-3.5 h-3.5 text-emerald-400" />
@@ -392,11 +455,10 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
                       </div>
                     </div>
                   ) : savedPrinter ? (
-                    /* Saved State: "Printer Bluetooth", "🟢 [Nama Printer]", [ Ganti Printer ] */
                     <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800 flex items-center justify-between gap-3">
                       <div className="space-y-0.5">
-                        <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">
-                          Printer Bluetooth
+                        <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider block">
+                          Printer Siap
                         </span>
                         <div className="text-xs font-bold text-white flex items-center gap-1.5">
                           <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]"></span>
@@ -405,42 +467,66 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
                       </div>
                       <button
                         type="button"
-                        onClick={handleConnectPrinter}
+                        onClick={handleConnectBlePrinter}
                         disabled={isPrinting || isPairingBt}
                         className="px-2.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 text-[11px] font-bold transition-colors cursor-pointer shrink-0 flex items-center gap-1"
                       >
-                        {isPairingBt ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : null}
+                        {isPairingBt ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                         <span>Ganti Printer</span>
                       </button>
                     </div>
                   ) : (
-                    /* Unconnected State: "Belum ada printer Bluetooth", [Hubungkan Printer] */
                     <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800 flex items-center justify-between gap-3">
                       <div>
                         <span className="text-xs text-zinc-300 font-bold block">
-                          Belum ada printer Bluetooth
+                          Belum ada printer Bluetooth BLE
                         </span>
                         <span className="text-[10px] text-zinc-500">
-                          Hubungkan printer thermal Anda sekali untuk menyimpan
+                          Hubungkan printer thermal BLE Anda sekali untuk menyimpan
                         </span>
                       </div>
                       <button
                         type="button"
-                        onClick={handleConnectPrinter}
+                        onClick={handleConnectBlePrinter}
                         disabled={isPrinting || isPairingBt}
                         className="px-3 py-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 text-xs font-bold transition-colors cursor-pointer shrink-0 flex items-center gap-1.5"
                       >
-                        {isPairingBt ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Bluetooth className="w-3.5 h-3.5" />
-                        )}
+                        {isPairingBt ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bluetooth className="w-3.5 h-3.5" />}
                         <span>Hubungkan Printer</span>
                       </button>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Sub-Panel: Method B (Android Classic via RawBT) Details */}
+              {printMethod === 'bluetooth_rawbt' && (
+                <div className="pt-2 border-t border-zinc-800/80 space-y-2">
+                  <div className="p-3 rounded-lg bg-zinc-950 border border-zinc-800 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider block">
+                        Printer Siap (Android Bridge)
+                      </span>
+                      <p className="text-xs text-zinc-300 font-bold">
+                        Mencetak langsung ke printer yang dipasangkan di RawBT
+                      </p>
+                      <p className="text-[10px] text-zinc-500 leading-tight">
+                        Tanpa scan browser. RawBT akan langsung meneruskan data ESC/POS ke printer Bluetooth.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <a
+                        href="https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-700 text-[11px] font-bold transition-colors inline-flex items-center gap-1 shrink-0"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Pasang / Buka RawBT</span>
+                      </a>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -451,6 +537,13 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
                 <div className="space-y-1">
                   <p className="leading-tight">{errorMessage}</p>
+                  <button
+                    type="button"
+                    onClick={() => handleMethodChange('system')}
+                    className="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 underline cursor-pointer"
+                  >
+                    Beralih ke Print Sistem
+                  </button>
                 </div>
               </div>
             )}
@@ -509,7 +602,7 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
             ) : isPrinting ? (
               <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>{statusMessage || 'Menghubungkan ke printer...'}</span>
+                <span>{statusMessage || 'Sedang memproses...'}</span>
               </span>
             ) : (
               <span>Siap mencetak ({activeWidthMm}mm)</span>
