@@ -408,7 +408,7 @@ export async function markServiceReady(
 
     const { error } = await supabase
       .from('services')
-      .update(updateData)
+      .update(updateData as any)
       .eq('id', ticketId)
       .eq('store_id', storeId);
 
@@ -425,7 +425,7 @@ export async function markServiceReady(
         delete updateData.action_taken;
         const retryRes = await supabase
           .from('services')
-          .update(updateData)
+          .update(updateData as any)
           .eq('id', ticketId)
           .eq('store_id', storeId);
         if (retryRes.error) {

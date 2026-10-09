@@ -72,6 +72,7 @@ import { syncLocalDataToSupabase } from './services/migrationService';
 // Kunci local storage HANYA untuk cache offline data operasional transaksi (layanan & kas)
 const STORAGE_KEY_SERVICES = 'ordo_servis_services_v6';
 const STORAGE_KEY_CASH_ENTRIES = 'ordo_servis_cash_entries_v2';
+const STORAGE_KEY_AUTH = 'ordo_servis_auth_user_v4';
 
 export default function App() {
   // Theme state: in-memory state, disinkronkan langsung dengan kolom stores.theme_preference di Supabase

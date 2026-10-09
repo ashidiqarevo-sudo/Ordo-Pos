@@ -373,7 +373,7 @@ export async function updateStoreOnboardingStatus(
 
     const { error } = await supabase
       .from('stores')
-      .update(updatePayload)
+      .update(updatePayload as any)
       .eq('id', storeId);
 
     if (error) {

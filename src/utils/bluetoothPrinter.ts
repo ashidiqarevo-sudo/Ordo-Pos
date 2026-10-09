@@ -165,50 +165,216 @@ export async function getBluetoothDeviceWithoutDiscovery(): Promise<any> {
 }
 
 /**
- * Renders HTML receipt element to 1-bit monochrome ESC/POS raster data.
+ * Calculates target dot width according to standard 203 DPI thermal printheads.
+ * 58mm: 384 dots (48 bytes per line)
+ * 80mm: 576 dots (72 bytes per line)
+ * Custom: proportional multiple of 8
+ */
+export function getTargetDotsWidth(paperWidthMm: number): number {
+  if (paperWidthMm <= 60) {
+    return 384;
+  }
+  if (paperWidthMm >= 76) {
+    return 576;
+  }
+  const dots = Math.round((paperWidthMm / 58) * 384);
+  return Math.max(384, Math.floor(dots / 8) * 8);
+}
+
+/**
+ * Renders HTML receipt element directly to 1-bit monochrome ESC/POS raster data.
+ * Fixes faint printing:
+ * 1. Renders natively at target printer dot resolution (384 dots for 58mm) in an offscreen container,
+ *    eliminating low-res screen capture and blurry bilinear scaling.
+ * 2. Overrides text & border colors to pure #000000 with strong font weights for thermal printheads.
+ * 3. Binarizes with threshold 200 and alpha-compositing, preserving full stroke thickness.
+ * 4. Chunks GS v 0 into 64-row bands to prevent buffer overruns on portable thermal printers.
  */
 export async function renderReceiptToEscPosRaster(
   receiptElement: HTMLElement,
   paperWidthMm: number
 ): Promise<Uint8Array> {
-  const targetDotsWidth = paperWidthMm <= 60 ? 384 : 576;
+  const targetDotsWidth = getTargetDotsWidth(paperWidthMm);
 
-  const canvas = await toCanvas(receiptElement, {
-    backgroundColor: '#ffffff',
-    pixelRatio: 1,
-    style: {
-      width: `${targetDotsWidth}px`,
-      maxWidth: `${targetDotsWidth}px`,
-      margin: '0',
-      padding: '4px',
-    },
-  });
+  // 1. Create dedicated offscreen staging container with exact target dot width
+  const stagingWrapper = document.createElement('div');
+  stagingWrapper.id = 'ordo-thermal-raster-staging';
+  stagingWrapper.style.position = 'fixed';
+  stagingWrapper.style.left = '-99999px';
+  stagingWrapper.style.top = '0';
+  stagingWrapper.style.width = `${targetDotsWidth}px`;
+  stagingWrapper.style.maxWidth = `${targetDotsWidth}px`;
+  stagingWrapper.style.minWidth = `${targetDotsWidth}px`;
+  stagingWrapper.style.backgroundColor = '#ffffff';
+  stagingWrapper.style.color = '#000000';
+  stagingWrapper.style.margin = '0';
+  stagingWrapper.style.padding = '0';
+  stagingWrapper.style.zIndex = '-99999';
+  stagingWrapper.style.opacity = '1';
+  stagingWrapper.style.pointerEvents = 'none';
+  stagingWrapper.style.boxSizing = 'border-box';
 
-  let finalCanvas = canvas;
-  if (canvas.width !== targetDotsWidth) {
-    const resizedCanvas = document.createElement('canvas');
-    resizedCanvas.width = targetDotsWidth;
-    const scale = targetDotsWidth / canvas.width;
-    resizedCanvas.height = Math.round(canvas.height * scale);
-    const ctx = resizedCanvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, resizedCanvas.width, resizedCanvas.height);
-      ctx.drawImage(canvas, 0, 0, resizedCanvas.width, resizedCanvas.height);
-      finalCanvas = resizedCanvas;
+  // 2. Clone receipt content
+  const receiptClone = receiptElement.cloneNode(true) as HTMLElement;
+  receiptClone.classList.add('thermal-receipt-clone');
+  receiptClone.style.width = `${targetDotsWidth}px`;
+  receiptClone.style.maxWidth = `${targetDotsWidth}px`;
+  receiptClone.style.minWidth = `${targetDotsWidth}px`;
+  receiptClone.style.backgroundColor = '#ffffff';
+  receiptClone.style.color = '#000000';
+  receiptClone.style.boxSizing = 'border-box';
+  receiptClone.style.padding = paperWidthMm <= 60 ? '6px 4px' : '10px 8px';
+
+  // 3. Inject strict high-contrast thermal CSS rules into staging container
+  const styleTag = document.createElement('style');
+  styleTag.textContent = `
+    .thermal-receipt-clone,
+    .thermal-receipt-clone * {
+      color: #000000 !important;
+      border-color: #000000 !important;
+      text-shadow: none !important;
+      box-shadow: none !important;
+      -webkit-font-smoothing: antialiased !important;
+      -moz-osx-font-smoothing: grayscale !important;
+    }
+    .thermal-receipt-clone {
+      background-color: #ffffff !important;
+      color: #000000 !important;
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+      line-height: 1.25 !important;
+    }
+    .thermal-receipt-clone div:not(.bg-black):not(.bg-zinc-950),
+    .thermal-receipt-clone span,
+    .thermal-receipt-clone p {
+      background-color: transparent !important;
+    }
+    .thermal-receipt-clone .border-b,
+    .thermal-receipt-clone .border-t,
+    .thermal-receipt-clone .border-y,
+    .thermal-receipt-clone .border {
+      border-color: #000000 !important;
+    }
+    .thermal-receipt-clone .border-dashed {
+      border-bottom-style: dashed !important;
+      border-bottom-width: 1px !important;
+      border-color: #000000 !important;
+    }
+    .thermal-receipt-clone span,
+    .thermal-receipt-clone p,
+    .thermal-receipt-clone div {
+      font-weight: 600;
+    }
+    .thermal-receipt-clone .font-normal {
+      font-weight: 500 !important;
+    }
+    .thermal-receipt-clone .font-bold,
+    .thermal-receipt-clone .font-black {
+      font-weight: 900 !important;
+    }
+    .thermal-receipt-clone .text-\\[8px\\],
+    .thermal-receipt-clone .text-\\[8\\.5px\\] {
+      font-size: 9.5px !important;
+      line-height: 1.15 !important;
+    }
+    .thermal-receipt-clone .text-\\[10px\\] {
+      font-size: 10.5px !important;
+    }
+    .thermal-receipt-clone .text-\\[11px\\] {
+      font-size: 11px !important;
+    }
+    .thermal-receipt-clone .text-xs {
+      font-size: 12px !important;
+    }
+    .thermal-receipt-clone img {
+      max-width: 100% !important;
+      height: auto !important;
+      filter: grayscale(100%) contrast(140%) !important;
+    }
+  `;
+
+  stagingWrapper.appendChild(styleTag);
+  stagingWrapper.appendChild(receiptClone);
+  document.body.appendChild(stagingWrapper);
+
+  try {
+    // 4. Wait for fonts and images
+    if (typeof document !== 'undefined' && 'fonts' in document) {
+      try {
+        await document.fonts.ready;
+      } catch {
+        // ignore font ready errors
+      }
+    }
+
+    const images = Array.from(stagingWrapper.querySelectorAll('img'));
+    if (images.length > 0) {
+      await Promise.all(
+        images.map(
+          (img) =>
+            new Promise<void>((resolve) => {
+              if (img.complete) return resolve();
+              img.onload = () => resolve();
+              img.onerror = () => resolve();
+              setTimeout(resolve, 1500);
+            })
+        )
+      );
+    }
+
+    // 5. Render directly to canvas at exact dot width with 1:1 pixel mapping
+    const canvas = await toCanvas(stagingWrapper, {
+      backgroundColor: '#ffffff',
+      pixelRatio: 1,
+      width: targetDotsWidth,
+      canvasWidth: targetDotsWidth,
+      style: {
+        width: `${targetDotsWidth}px`,
+        maxWidth: `${targetDotsWidth}px`,
+        margin: '0',
+        padding: '0',
+      },
+    });
+
+    let finalCanvas = canvas;
+    if (canvas.width !== targetDotsWidth) {
+      const resizedCanvas = document.createElement('canvas');
+      resizedCanvas.width = targetDotsWidth;
+      const scale = targetDotsWidth / canvas.width;
+      resizedCanvas.height = Math.round(canvas.height * scale);
+      const ctx = resizedCanvas.getContext('2d');
+      if (ctx) {
+        ctx.imageSmoothingEnabled = false; // Nearest-neighbor to preserve crisp 1-bit edges
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, resizedCanvas.width, resizedCanvas.height);
+        ctx.drawImage(canvas, 0, 0, resizedCanvas.width, resizedCanvas.height);
+        finalCanvas = resizedCanvas;
+      }
+    }
+
+    return convertCanvasToEscPosRaster(finalCanvas);
+  } finally {
+    if (stagingWrapper.parentNode) {
+      stagingWrapper.parentNode.removeChild(stagingWrapper);
     }
   }
-
-  return convertCanvasToEscPosRaster(finalCanvas);
 }
 
 /**
- * Converts a Canvas to standard ESC/POS GS v 0 1-bit raster data
+ * Converts a Canvas to standard ESC/POS GS v 0 1-bit raster data.
+ * Applies:
+ * - Robust alpha compositing over white
+ * - Calibrated threshold (200) for sharp, dark letter strokes on thermal paper
+ * - 64-row banding to prevent thermal printer buffer overflows
+ * - Clean paper feed and partial cut
  */
 function convertCanvasToEscPosRaster(canvas: HTMLCanvasElement): Uint8Array {
   const width = canvas.width;
   const height = canvas.height;
-  const ctx = canvas.getContext('2d')!;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Gagal mendapatkan 2D context canvas.');
+  }
+
   const imgData = ctx.getImageData(0, 0, width, height);
   const rgba = imgData.data;
 
@@ -218,35 +384,65 @@ function convertCanvasToEscPosRaster(canvas: HTMLCanvasElement): Uint8Array {
   // ESC @ (Initialize printer)
   rasterData.push(0x1b, 0x40);
 
-  // GS v 0 0 xL xH yL yH
+  // Banding height (64 rows per GS v 0 block)
+  // Keeps each chunk under ~3KB, safely within 4KB-8KB thermal printer receive buffers
+  const BAND_HEIGHT = 64;
   const xL = widthBytes % 256;
   const xH = Math.floor(widthBytes / 256);
-  const yL = height % 256;
-  const yH = Math.floor(height / 256);
 
-  rasterData.push(0x1d, 0x76, 0x30, 0x00, xL, xH, yL, yH);
+  // Calibrated luminance threshold:
+  // Anti-aliased font edges have luminance ~160-205.
+  // Using threshold 200 guarantees deep, solid, unbroken black character strokes without missing dots.
+  const THRESHOLD = 200;
 
-  for (let y = 0; y < height; y++) {
-    for (let xByte = 0; xByte < widthBytes; xByte++) {
-      let byteVal = 0;
-      for (let bit = 0; bit < 8; bit++) {
-        const x = xByte * 8 + bit;
-        if (x < width) {
-          const idx = (y * width + x) * 4;
-          const r = rgba[idx];
-          const g = rgba[idx + 1];
-          const b = rgba[idx + 2];
-          const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-          if (luminance < 160) {
-            byteVal |= 1 << (7 - bit);
+  for (let startY = 0; startY < height; startY += BAND_HEIGHT) {
+    const bandHeight = Math.min(BAND_HEIGHT, height - startY);
+    const yL = bandHeight % 256;
+    const yH = Math.floor(bandHeight / 256);
+
+    // GS v 0 m xL xH yL yH
+    rasterData.push(0x1d, 0x76, 0x30, 0x00, xL, xH, yL, yH);
+
+    for (let y = startY; y < startY + bandHeight; y++) {
+      for (let xByte = 0; xByte < widthBytes; xByte++) {
+        let byteVal = 0;
+        for (let bit = 0; bit < 8; bit++) {
+          const x = xByte * 8 + bit;
+          if (x < width) {
+            const idx = (y * width + x) * 4;
+            const a = rgba[idx + 3];
+            let r = rgba[idx];
+            let g = rgba[idx + 1];
+            let b = rgba[idx + 2];
+
+            if (a < 128) {
+              // Transparent pixel is treated as white background
+              r = 255;
+              g = 255;
+              b = 255;
+            } else if (a < 255) {
+              // Composite onto solid white background
+              const alphaFrac = a / 255;
+              r = Math.round(r * alphaFrac + 255 * (1 - alphaFrac));
+              g = Math.round(g * alphaFrac + 255 * (1 - alphaFrac));
+              b = Math.round(b * alphaFrac + 255 * (1 - alphaFrac));
+            }
+
+            // ITU-R BT.601 standard luminance
+            const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+
+            // Black dot on thermal paper
+            if (luminance <= THRESHOLD) {
+              byteVal |= 1 << (7 - bit);
+            }
           }
         }
+        rasterData.push(byteVal);
       }
-      rasterData.push(byteVal);
     }
   }
 
-  // Line feeds and cut
+  // Line feeds (4 lines) and partial cut (GS V B 0)
   rasterData.push(0x0a, 0x0a, 0x0a, 0x0a);
   rasterData.push(0x1d, 0x56, 0x42, 0x00);
 
@@ -254,13 +450,18 @@ function convertCanvasToEscPosRaster(canvas: HTMLCanvasElement): Uint8Array {
 }
 
 /**
- * Helper to encode binary Uint8Array into standard Base64 string
+ * Helper to encode binary Uint8Array into standard Base64 string in chunks
+ * to avoid call stack limits on large binary payloads.
  */
 function uint8ArrayToBase64(bytes: Uint8Array): string {
   let binary = '';
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  const chunkSize = 8192;
+  const len = bytes.length;
+  for (let i = 0; i < len; i += chunkSize) {
+    const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
+    for (let j = 0; j < chunk.length; j++) {
+      binary += String.fromCharCode(chunk[j]);
+    }
   }
   return window.btoa(binary);
 }
@@ -382,10 +583,27 @@ export async function printReceiptViaRawBt(
   onStatusChange?.('Meneruskan nota ke printer Android...');
 
   // RawBT Android Intent URL
-  const intentUrl = `intent:base64,${base64Data}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
+  // NOTE: encodeURIComponent is critical! Base64 contains '+', '/', and '='.
+  // In Android Chrome Intent URIs, unencoded '+' is parsed by Android as a space,
+  // which silently corrupts the binary ESC/POS payload!
+  const encodedBase64 = encodeURIComponent(base64Data);
+  const intentUrl = `intent:base64,${encodedBase64}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
 
-  // Open RawBT Intent
-  window.location.href = intentUrl;
+  // Trigger Intent via anchor click with window.location fallback
+  try {
+    const anchor = document.createElement('a');
+    anchor.href = intentUrl;
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    setTimeout(() => {
+      if (anchor.parentNode) {
+        anchor.parentNode.removeChild(anchor);
+      }
+    }, 1000);
+  } catch {
+    window.location.href = intentUrl;
+  }
 
   onStatusChange?.('Nota berhasil diteruskan ke Android!');
 }
