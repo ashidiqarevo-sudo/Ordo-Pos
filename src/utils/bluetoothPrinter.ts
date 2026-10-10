@@ -199,7 +199,9 @@ function waitForPaint(): Promise<void> {
  * Draws any canvas onto a brand-new, fully opaque solid-white canvas of the exact target width.
  * Guarantees there are no transparent pixels left for the thresholding step.
  */
-function flattenOntoWhite(source: HTMLCanvasElement, targetWidth: number): HTMLCanvasElement {
+function flattenOntoWhite(source: HTMLCanvasElement, requestedWidth: number): HTMLCanvasElement {
+  // Raster width must be an exact multiple of 8 dots (1 byte = 8 horizontal dots)
+  const targetWidth = Math.max(8, Math.floor(requestedWidth / 8) * 8);
   const scale = targetWidth / source.width;
   const out = document.createElement('canvas');
   out.width = targetWidth;
@@ -457,70 +459,100 @@ export async function renderReceiptToEscPosRaster(
 }
 
 /**
- * Converts an opaque white-backed Canvas to a single ESC/POS `GS v 0` 1-bit raster image.
+ * Max rows per `GS v 0` band. Many cheap 58/80mm BT printers have a small receive buffer
+ * (~4 KB) and/or cap yH. One giant image (e.g. 384x1500 = 72 KB) overflows that buffer;
+ * the dropped bytes shift every following row (skew/stripes) and the leftover image bytes
+ * are then interpreted as ASCII text (garbage at the bottom).
+ * 64 rows * 72 bytes (80mm) = 4.6 KB per band.
+ */
+const RASTER_BAND_HEIGHT = 64;
+
+/**
+ * Converts an opaque white-backed Canvas to ESC/POS `GS v 0` 1-bit raster bands.
  *
  * Bit semantics for GS v 0: 1 = BLACK dot (heat), 0 = WHITE (no heat). MSB = leftmost pixel.
  * Pixel rule: luminance < 200 -> BLACK (1); otherwise WHITE (0).
- * Any residual alpha is composited onto white first.
  *
- * Payload layout (one contiguous image, no banding):
- *   ESC @ | GS v 0 m=0 xL xH yL yH | widthBytes*height data | LF x4 | GS V B 0
+ * Payload layout:
+ *   ESC @ | ESC a 0 | { GS v 0 0 xL xH yL yH | widthBytes*bandH bytes } x N | LF x4 | GS V B 0
  */
 function convertCanvasToEscPosRaster(canvas: HTMLCanvasElement): Uint8Array {
-  const width = canvas.width;
+  const srcWidth = canvas.width;
   const height = canvas.height;
   const ctx = canvas.getContext('2d');
   if (!ctx) {
     throw new Error('Gagal mendapatkan 2D context canvas.');
   }
-  if (height > 65535) {
-    throw new Error('Nota terlalu panjang untuk satu gambar raster ESC/POS.');
+  if (srcWidth <= 0 || height <= 0) {
+    throw new Error('Ukuran gambar nota tidak valid.');
   }
 
-  const rgba = ctx.getImageData(0, 0, width, height).data;
-  const widthBytes = Math.ceil(width / 8);
+  // 1. Raster width MUST be an exact multiple of 8 dots. Extra columns are padded white.
+  const width = Math.ceil(srcWidth / 8) * 8;
+  const widthBytes = width / 8; // integer by construction
 
-  const HEADER = [
-    0x1b, 0x40, // ESC @ - initialize
-    0x1d, 0x76, 0x30, 0x00, // GS v 0, m = 0 (normal density)
-    widthBytes & 0xff, (widthBytes >> 8) & 0xff, // xL xH (bytes per row)
-    height & 0xff, (height >> 8) & 0xff, // yL yH (rows)
-  ];
+  const rgba = ctx.getImageData(0, 0, srcWidth, height).data;
+  if (rgba.length !== srcWidth * height * 4) {
+    throw new Error('Data piksel canvas tidak lengkap.');
+  }
+
+  // 2. Pack pixels into a strictly-sized 1-bit bitmap: exactly widthBytes * height bytes.
+  const bitmap = new Uint8Array(widthBytes * height); // zero-filled = white
+  for (let y = 0; y < height; y++) {
+    const srcRow = y * srcWidth * 4;
+    const dstRow = y * widthBytes;
+    for (let x = 0; x < srcWidth; x++) {
+      const idx = srcRow + x * 4;
+      const a = rgba[idx + 3] / 255;
+      // Composite onto white so transparent pixels never count as black
+      const r = rgba[idx] * a + 255 * (1 - a);
+      const g = rgba[idx + 1] * a + 255 * (1 - a);
+      const b = rgba[idx + 2] * a + 255 * (1 - a);
+      const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+      if (luminance < RASTER_THRESHOLD) {
+        // x >> 3 = byte index in row, 7 - (x & 7) = bit position (MSB = leftmost dot)
+        bitmap[dstRow + (x >> 3)] |= 1 << (7 - (x & 7));
+      }
+    }
+  }
+
+  // 3. Assemble command stream with exact pre-computed size.
+  const INIT = [0x1b, 0x40, 0x1b, 0x61, 0x00]; // ESC @ (reset), ESC a 0 (left align)
   const FOOTER = [
     0x0a, 0x0a, 0x0a, 0x0a, // feed 4 lines
     0x1d, 0x56, 0x42, 0x00, // GS V B 0 - partial cut
   ];
+  const BAND_HEADER_LEN = 8;
+  const bandCount = Math.ceil(height / RASTER_BAND_HEIGHT);
+  const totalLen = INIT.length + bandCount * BAND_HEADER_LEN + bitmap.length + FOOTER.length;
 
-  const imageBytes = widthBytes * height;
-  const out = new Uint8Array(HEADER.length + imageBytes + FOOTER.length);
-  out.set(HEADER, 0);
+  const out = new Uint8Array(totalLen);
+  let p = 0;
+  out.set(INIT, p);
+  p += INIT.length;
 
-  let p = HEADER.length;
-  for (let y = 0; y < height; y++) {
-    const rowOffset = y * width;
-    for (let xByte = 0; xByte < widthBytes; xByte++) {
-      let byteVal = 0;
-      for (let bit = 0; bit < 8; bit++) {
-        const x = xByte * 8 + bit;
-        if (x >= width) break; // padding bits stay 0 (white)
-
-        const idx = (rowOffset + x) * 4;
-        const a = rgba[idx + 3] / 255;
-        // Composite onto white so transparent pixels never count as black
-        const r = rgba[idx] * a + 255 * (1 - a);
-        const g = rgba[idx + 1] * a + 255 * (1 - a);
-        const b = rgba[idx + 2] * a + 255 * (1 - a);
-        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-
-        if (luminance < RASTER_THRESHOLD) {
-          byteVal |= 0x80 >> bit; // BLACK dot
-        }
-      }
-      out[p++] = byteVal;
-    }
+  for (let y0 = 0; y0 < height; y0 += RASTER_BAND_HEIGHT) {
+    const bandH = Math.min(RASTER_BAND_HEIGHT, height - y0);
+    out[p++] = 0x1d; // GS
+    out[p++] = 0x76; // v
+    out[p++] = 0x30; // 0
+    out[p++] = 0x00; // m = 0 (normal density)
+    out[p++] = widthBytes & 0xff; // xL
+    out[p++] = (widthBytes >> 8) & 0xff; // xH
+    out[p++] = bandH & 0xff; // yL
+    out[p++] = (bandH >> 8) & 0xff; // yH
+    const start = y0 * widthBytes;
+    const end = start + bandH * widthBytes;
+    out.set(bitmap.subarray(start, end), p);
+    p += end - start;
   }
 
   out.set(FOOTER, p);
+  p += FOOTER.length;
+
+  if (p !== totalLen) {
+    throw new Error(`ESC/POS byte mismatch: ditulis ${p}, dialokasikan ${totalLen}.`);
+  }
   return out;
 }
 
@@ -626,16 +658,45 @@ export async function printReceiptViaBluetooth(
 
   onStatusChange?.('Mengirim data nota ke printer...');
 
-  // Transmit in chunks (256 bytes per packet)
-  const chunkSize = 256;
-  for (let offset = 0; offset < escPosData.length; offset += chunkSize) {
-    const chunk = escPosData.slice(offset, offset + chunkSize);
-    if (writeCharacteristic.writeValueWithoutResponse) {
+  // Transmit in MTU-safe chunks.
+  // Previously 256-byte packets were sent with writeWithoutResponse. Most cheap BLE printers
+  // negotiate ATT MTU 23 (20-byte payload); oversize no-response writes are silently truncated
+  // and there is no flow control, so the printer buffer overflows -> lost bytes -> raster desync.
+  const supportsWithResponse =
+    !!writeCharacteristic.properties?.write &&
+    typeof writeCharacteristic.writeValueWithResponse === 'function';
+  const supportsWithoutResponse =
+    typeof writeCharacteristic.writeValueWithoutResponse === 'function';
+
+  const writeChunk = async (chunk: Uint8Array) => {
+    if (supportsWithResponse) {
+      await writeCharacteristic.writeValueWithResponse(chunk); // ACK = natural flow control
+    } else if (supportsWithoutResponse) {
       await writeCharacteristic.writeValueWithoutResponse(chunk);
     } else {
       await writeCharacteristic.writeValue(chunk);
     }
-    await new Promise((res) => setTimeout(res, 25));
+  };
+
+  // With-response writes: try a larger packet first, fall back to 20 bytes if rejected.
+  let chunkSize = supportsWithResponse ? 180 : 20;
+  const interChunkDelayMs = supportsWithResponse ? 0 : 8;
+  let offset = 0;
+  while (offset < escPosData.length) {
+    const chunk = escPosData.slice(offset, offset + chunkSize);
+    try {
+      await writeChunk(chunk);
+    } catch (err) {
+      if (chunkSize > 20) {
+        chunkSize = 20; // retry the SAME offset with a smaller packet, no bytes skipped
+        continue;
+      }
+      throw err;
+    }
+    offset += chunk.length;
+    if (interChunkDelayMs > 0) {
+      await new Promise((res) => setTimeout(res, interChunkDelayMs));
+    }
   }
 
   onStatusChange?.('Pencetakan selesai!');
@@ -657,12 +718,12 @@ export async function printReceiptViaRawBt(
 
   onStatusChange?.('Meneruskan nota ke printer Android...');
 
-  // RawBT Android Intent URL
-  // NOTE: encodeURIComponent is critical! Base64 contains '+', '/', and '='.
-  // In Android Chrome Intent URIs, unencoded '+' is parsed by Android as a space,
-  // which silently corrupts the binary ESC/POS payload!
-  const encodedBase64 = encodeURIComponent(base64Data);
-  const intentUrl = `intent:base64,${encodedBase64}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
+  // RawBT Android Intent URL.
+  // Base64 alphabet (A-Z a-z 0-9 + / =) is already URI-safe and android.net.Uri does NOT
+  // turn '+' into a space. Percent-encoding it ('%2B', '%2F', '%3D') made RawBT's lenient
+  // base64 decoder read '%','2','B' as data -> extra/shifted bits -> skewed, striped image
+  // and garbage text. Send raw base64 (same as the official RawBT JS example).
+  const intentUrl = `intent:base64,${base64Data}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
 
   // Trigger Intent via anchor click with window.location fallback
   try {
