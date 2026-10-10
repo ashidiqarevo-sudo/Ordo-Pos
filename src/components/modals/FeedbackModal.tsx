@@ -3,14 +3,10 @@ import {
   MessageSquareHeart,
   X,
   Send,
-  Mail,
-  CheckCircle2,
-  Copy,
   Lightbulb,
   AlertCircle,
   MessageCircle,
   HelpCircle,
-  Sparkles,
   ExternalLink,
 } from 'lucide-react';
 import { StoreSettings, AuthUser } from '../../types';
@@ -43,9 +39,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
   const [contactInfo, setContactInfo] = useState(
     storeSettings?.storePhone || currentUser?.phone || ''
   );
-  const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
-  const [copied, setCopied] = useState(false);
 
   if (!isOpen) return null;
 
@@ -74,13 +68,17 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
     },
   };
 
+  const getSubjectText = () => {
+    const storeOrSender = storeName.trim() || senderName.trim();
+    return `[ORDO SERVIS - ${typeLabels[feedbackType].label}]${storeOrSender ? ` - ${storeOrSender}` : ''}`;
+  };
+
   const constructEmailBody = () => {
     return `Halo Tim Pengembang ORDO SERVIS,
 
 Saya ingin menyampaikan ${typeLabels[feedbackType].label.toLowerCase()}:
 
 --------------------------------------------------
-Topik: ${title.trim() || 'Kritik & Saran Aplikasi'}
 Kategori: ${typeLabels[feedbackType].label}
 Pengirim: ${senderName.trim() || 'Pengguna Ordo'}
 Nama Toko: ${storeName.trim() || '-'}
@@ -97,17 +95,13 @@ Waktu: ${new Date().toLocaleString('id-ID')}
   };
 
   const getMailtoUrl = () => {
-    const emailSubject = encodeURIComponent(
-      `[ORDO SERVIS - ${typeLabels[feedbackType].label}] ${title.trim() || 'Masukan Pengguna'}`
-    );
+    const emailSubject = encodeURIComponent(getSubjectText());
     const emailBody = encodeURIComponent(constructEmailBody());
     return `mailto:${targetEmail}?subject=${emailSubject}&body=${emailBody}`;
   };
 
   const getGmailWebUrl = () => {
-    const emailSubject = encodeURIComponent(
-      `[ORDO SERVIS - ${typeLabels[feedbackType].label}] ${title.trim() || 'Masukan Pengguna'}`
-    );
+    const emailSubject = encodeURIComponent(getSubjectText());
     const emailBody = encodeURIComponent(constructEmailBody());
     return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(targetEmail)}&su=${emailSubject}&body=${emailBody}`;
   };
@@ -129,20 +123,6 @@ Waktu: ${new Date().toLocaleString('id-ID')}
 
     if (onShowToast) {
       onShowToast('Membuka aplikasi email... Pastikan klik "Kirim" di email Anda!', 'success');
-    }
-  };
-
-  const handleCopyMessage = () => {
-    if (!message.trim()) {
-      if (onShowToast) onShowToast('Tulis pesan terlebih dahulu sebelum menyalin!', 'error');
-      return;
-    }
-    const fullText = `Kepada: ${targetEmail}\nSubjek: [ORDO SERVIS - ${typeLabels[feedbackType].label}] ${title.trim() || 'Masukan Pengguna'}\n\n${constructEmailBody()}`;
-    navigator.clipboard.writeText(fullText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 3000);
-    if (onShowToast) {
-      onShowToast(`Format pesan berhasil disalin! Silakan kirim ke ${targetEmail}`, 'info');
     }
   };
 
@@ -235,20 +215,6 @@ Waktu: ${new Date().toLocaleString('id-ID')}
             </div>
           </div>
 
-          {/* Topic Title */}
-          <div>
-            <label className="text-xs font-medium text-zinc-400 block mb-1">
-              Judul / Topik Singkat:
-            </label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Contoh: Tambah fitur cetak nota via Bluetooth thermal"
-              className="w-full px-3 py-2 rounded-xl bg-zinc-950 border border-zinc-700/80 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all"
-            />
-          </div>
-
           {/* Message Area */}
           <div>
             <label className="text-xs font-medium text-zinc-300 block mb-1 flex items-center justify-between">
@@ -263,37 +229,6 @@ Waktu: ${new Date().toLocaleString('id-ID')}
               placeholder="Tuliskan kritik, masukan fitur baru, atau kendala yang Anda alami secara detail..."
               className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-700/80 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400 transition-all resize-none leading-relaxed"
             />
-          </div>
-
-          {/* Destination Email Info Card */}
-          <div className="p-3 rounded-xl bg-zinc-950/80 border border-zinc-800 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <Mail className="w-4 h-4 text-amber-400 shrink-0" />
-              <div className="min-w-0">
-                <span className="text-[10px] text-zinc-400 block">Tujuan Email:</span>
-                <span className="text-xs font-mono font-semibold text-zinc-200 truncate block">
-                  {targetEmail}
-                </span>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handleCopyMessage}
-              className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[11px] font-semibold text-zinc-300 flex items-center gap-1 border border-zinc-700 shrink-0 transition-colors"
-              title="Salin isi pesan ke clipboard"
-            >
-              {copied ? (
-                <>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-emerald-400">Tersalin</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5 text-zinc-400" />
-                  <span>Salin Teks</span>
-                </>
-              )}
-            </button>
           </div>
 
           {/* Action Buttons */}
