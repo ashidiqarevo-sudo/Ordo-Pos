@@ -181,14 +181,68 @@ export function getTargetDotsWidth(paperWidthMm: number): number {
   return Math.max(384, Math.floor(dots / 8) * 8);
 }
 
+/** Luminance threshold: pixels darker than this become a BLACK dot (bit = 1). */
+const RASTER_THRESHOLD = 200;
+
+/** Waits for the browser to complete layout + paint of freshly inserted DOM. */
+function waitForPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame !== 'function') {
+      setTimeout(resolve, 50);
+      return;
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+}
+
+/**
+ * Draws any canvas onto a brand-new, fully opaque solid-white canvas of the exact target width.
+ * Guarantees there are no transparent pixels left for the thresholding step.
+ */
+function flattenOntoWhite(source: HTMLCanvasElement, targetWidth: number): HTMLCanvasElement {
+  const scale = targetWidth / source.width;
+  const out = document.createElement('canvas');
+  out.width = targetWidth;
+  out.height = Math.max(1, Math.round(source.height * scale));
+  const ctx = out.getContext('2d', { willReadFrequently: true } as CanvasRenderingContext2DSettings);
+  if (!ctx) {
+    throw new Error('Gagal mendapatkan 2D context canvas.');
+  }
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, out.width, out.height);
+  ctx.imageSmoothingEnabled = scale !== 1;
+  ctx.drawImage(source, 0, 0, out.width, out.height);
+  return out;
+}
+
+/** Counts pixels that will become black dots. Used to detect a blank render before wasting paper. */
+function countDarkPixels(canvas: HTMLCanvasElement): number {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return 0;
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  let dark = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    if (lum < RASTER_THRESHOLD) dark++;
+  }
+  return dark;
+}
+
 /**
  * Renders HTML receipt element directly to 1-bit monochrome ESC/POS raster data.
- * Fixes faint printing:
- * 1. Renders natively at target printer dot resolution (384 dots for 58mm) in an offscreen container,
- *    eliminating low-res screen capture and blurry bilinear scaling.
- * 2. Overrides text & border colors to pure #000000 with strong font weights for thermal printheads.
- * 3. Binarizes with threshold 200 and alpha-compositing, preserving full stroke thickness.
- * 4. Chunks GS v 0 into 64-row bands to prevent buffer overruns on portable thermal printers.
+ *
+ * BLANK-PRINT FIX:
+ * Previously the node passed to html-to-image was the offscreen wrapper itself
+ * (`position: fixed; left: -99999px`). html-to-image copies the root node's computed style
+ * into the SVG <foreignObject>, so the receipt content was drawn 99999px outside the canvas
+ * and only the white backgroundColor remained -> 100% white image / blank paper.
+ *
+ * Now:
+ * 1. An offscreen HOST div is positioned off-screen, but the CAPTURED node inside it is
+ *    `position: static` at (0,0), and positioning is also force-reset via the `style` option.
+ * 2. Output is flattened onto an opaque #FFFFFF canvas.
+ * 3. Text/borders are forced to pure #000000.
+ * 4. Render is verified to contain dark pixels (retried once; WebKit often returns blank on 1st pass).
  */
 export async function renderReceiptToEscPosRaster(
   receiptElement: HTMLElement,
@@ -196,22 +250,30 @@ export async function renderReceiptToEscPosRaster(
 ): Promise<Uint8Array> {
   const targetDotsWidth = getTargetDotsWidth(paperWidthMm);
 
-  // 1. Create dedicated offscreen staging container with exact target dot width
+  // 1a. Offscreen HOST (only this element is moved off-screen; it is NOT captured)
+  const hostContainer = document.createElement('div');
+  hostContainer.id = 'ordo-thermal-raster-host';
+  hostContainer.setAttribute('aria-hidden', 'true');
+  hostContainer.style.position = 'fixed';
+  hostContainer.style.left = '-10000px';
+  hostContainer.style.top = '0';
+  hostContainer.style.width = `${targetDotsWidth}px`;
+  hostContainer.style.overflow = 'visible';
+  hostContainer.style.pointerEvents = 'none';
+  hostContainer.style.zIndex = '-1';
+
+  // 1b. CAPTURE node: static, in normal flow, solid white background, exact dot width
   const stagingWrapper = document.createElement('div');
   stagingWrapper.id = 'ordo-thermal-raster-staging';
-  stagingWrapper.style.position = 'fixed';
-  stagingWrapper.style.left = '-99999px';
-  stagingWrapper.style.top = '0';
+  stagingWrapper.style.position = 'static';
   stagingWrapper.style.width = `${targetDotsWidth}px`;
   stagingWrapper.style.maxWidth = `${targetDotsWidth}px`;
   stagingWrapper.style.minWidth = `${targetDotsWidth}px`;
-  stagingWrapper.style.backgroundColor = '#ffffff';
+  stagingWrapper.style.backgroundColor = '#FFFFFF';
   stagingWrapper.style.color = '#000000';
   stagingWrapper.style.margin = '0';
   stagingWrapper.style.padding = '0';
-  stagingWrapper.style.zIndex = '-99999';
   stagingWrapper.style.opacity = '1';
-  stagingWrapper.style.pointerEvents = 'none';
   stagingWrapper.style.boxSizing = 'border-box';
 
   // 2. Clone receipt content
@@ -231,9 +293,13 @@ export async function renderReceiptToEscPosRaster(
     .thermal-receipt-clone,
     .thermal-receipt-clone * {
       color: #000000 !important;
+      -webkit-text-fill-color: #000000 !important;
       border-color: #000000 !important;
       text-shadow: none !important;
       box-shadow: none !important;
+      opacity: 1 !important;
+      visibility: visible !important;
+      mix-blend-mode: normal !important;
       -webkit-font-smoothing: antialiased !important;
       -moz-osx-font-smoothing: grayscale !important;
     }
@@ -294,7 +360,8 @@ export async function renderReceiptToEscPosRaster(
 
   stagingWrapper.appendChild(styleTag);
   stagingWrapper.appendChild(receiptClone);
-  document.body.appendChild(stagingWrapper);
+  hostContainer.appendChild(stagingWrapper);
+  document.body.appendChild(hostContainer);
 
   try {
     // 4. Wait for fonts and images
@@ -321,51 +388,83 @@ export async function renderReceiptToEscPosRaster(
       );
     }
 
-    // 5. Render directly to canvas at exact dot width with 1:1 pixel mapping
-    const canvas = await toCanvas(stagingWrapper, {
-      backgroundColor: '#ffffff',
-      pixelRatio: 1,
-      width: targetDotsWidth,
-      canvasWidth: targetDotsWidth,
-      style: {
-        width: `${targetDotsWidth}px`,
-        maxWidth: `${targetDotsWidth}px`,
-        margin: '0',
-        padding: '0',
-      },
-    });
+    // Ensure layout & paint are complete before measuring/capturing
+    await waitForPaint();
 
-    let finalCanvas = canvas;
-    if (canvas.width !== targetDotsWidth) {
-      const resizedCanvas = document.createElement('canvas');
-      resizedCanvas.width = targetDotsWidth;
-      const scale = targetDotsWidth / canvas.width;
-      resizedCanvas.height = Math.round(canvas.height * scale);
-      const ctx = resizedCanvas.getContext('2d');
-      if (ctx) {
-        ctx.imageSmoothingEnabled = false; // Nearest-neighbor to preserve crisp 1-bit edges
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, resizedCanvas.width, resizedCanvas.height);
-        ctx.drawImage(canvas, 0, 0, resizedCanvas.width, resizedCanvas.height);
-        finalCanvas = resizedCanvas;
-      }
+    const captureHeight = Math.max(
+      1,
+      Math.ceil(stagingWrapper.scrollHeight || stagingWrapper.getBoundingClientRect().height)
+    );
+
+    const renderOnce = async (skipFonts: boolean): Promise<HTMLCanvasElement> => {
+      const raw = await toCanvas(stagingWrapper, {
+        backgroundColor: '#FFFFFF',
+        pixelRatio: 1,
+        width: targetDotsWidth,
+        height: captureHeight,
+        canvasWidth: targetDotsWidth,
+        canvasHeight: captureHeight,
+        skipFonts,
+        cacheBust: false,
+        // Force the cloned ROOT back to (0,0) inside the SVG foreignObject.
+        // Without this, any inherited fixed/offscreen positioning pushes content out of frame.
+        style: {
+          position: 'static',
+          left: '0',
+          top: '0',
+          right: 'auto',
+          bottom: 'auto',
+          transform: 'none',
+          opacity: '1',
+          visibility: 'visible',
+          width: `${targetDotsWidth}px`,
+          maxWidth: `${targetDotsWidth}px`,
+          margin: '0',
+          padding: '0',
+          backgroundColor: '#FFFFFF',
+        },
+      });
+      return flattenOntoWhite(raw, targetDotsWidth);
+    };
+
+    // 5. Render, verify there is actual ink, retry once if blank
+    let finalCanvas: HTMLCanvasElement;
+    try {
+      finalCanvas = await renderOnce(false);
+    } catch {
+      // Web-font embedding (CORS) failure -> render with system fonts instead
+      finalCanvas = await renderOnce(true);
+    }
+
+    if (countDarkPixels(finalCanvas) === 0) {
+      // WebKit/Android WebView frequently produce an empty first frame (images/fonts not yet decoded in SVG)
+      await waitForPaint();
+      finalCanvas = await renderOnce(true);
+    }
+
+    if (countDarkPixels(finalCanvas) === 0) {
+      throw new Error(
+        'Render nota menghasilkan gambar kosong. Pencetakan dibatalkan agar kertas tidak terbuang. Silakan coba lagi atau gunakan opsi "Print Sistem".'
+      );
     }
 
     return convertCanvasToEscPosRaster(finalCanvas);
   } finally {
-    if (stagingWrapper.parentNode) {
-      stagingWrapper.parentNode.removeChild(stagingWrapper);
+    if (hostContainer.parentNode) {
+      hostContainer.parentNode.removeChild(hostContainer);
     }
   }
 }
 
 /**
- * Converts a Canvas to standard ESC/POS GS v 0 1-bit raster data.
- * Applies:
- * - Robust alpha compositing over white
- * - Calibrated threshold (200) for sharp, dark letter strokes on thermal paper
- * - 64-row banding to prevent thermal printer buffer overflows
- * - Clean paper feed and partial cut
+ * Converts an opaque white-backed Canvas to a single ESC/POS `GS v 0` 1-bit raster image.
+ *
+ * Bit semantics for GS v 0: 1 = BLACK dot (heat), 0 = WHITE (no heat). MSB = leftmost pixel.
+ * Pixel rule: luminance < 200 -> BLACK (1); otherwise WHITE (0).
+ * Any residual alpha is composited onto white first.
+ *
+ * Payload layout (one contiguous image, no banding):
+ *   ESC @ | GS v 0 m=0 xL xH yL yH | widthBytes*height data | LF x4 | GS V B 0
  */
 function convertCanvasToEscPosRaster(canvas: HTMLCanvasElement): Uint8Array {
   const width = canvas.width;
@@ -374,79 +473,55 @@ function convertCanvasToEscPosRaster(canvas: HTMLCanvasElement): Uint8Array {
   if (!ctx) {
     throw new Error('Gagal mendapatkan 2D context canvas.');
   }
+  if (height > 65535) {
+    throw new Error('Nota terlalu panjang untuk satu gambar raster ESC/POS.');
+  }
 
-  const imgData = ctx.getImageData(0, 0, width, height);
-  const rgba = imgData.data;
-
+  const rgba = ctx.getImageData(0, 0, width, height).data;
   const widthBytes = Math.ceil(width / 8);
-  const rasterData: number[] = [];
 
-  // ESC @ (Initialize printer)
-  rasterData.push(0x1b, 0x40);
+  const HEADER = [
+    0x1b, 0x40, // ESC @ - initialize
+    0x1d, 0x76, 0x30, 0x00, // GS v 0, m = 0 (normal density)
+    widthBytes & 0xff, (widthBytes >> 8) & 0xff, // xL xH (bytes per row)
+    height & 0xff, (height >> 8) & 0xff, // yL yH (rows)
+  ];
+  const FOOTER = [
+    0x0a, 0x0a, 0x0a, 0x0a, // feed 4 lines
+    0x1d, 0x56, 0x42, 0x00, // GS V B 0 - partial cut
+  ];
 
-  // Banding height (64 rows per GS v 0 block)
-  // Keeps each chunk under ~3KB, safely within 4KB-8KB thermal printer receive buffers
-  const BAND_HEIGHT = 64;
-  const xL = widthBytes % 256;
-  const xH = Math.floor(widthBytes / 256);
+  const imageBytes = widthBytes * height;
+  const out = new Uint8Array(HEADER.length + imageBytes + FOOTER.length);
+  out.set(HEADER, 0);
 
-  // Calibrated luminance threshold:
-  // Anti-aliased font edges have luminance ~160-205.
-  // Using threshold 200 guarantees deep, solid, unbroken black character strokes without missing dots.
-  const THRESHOLD = 200;
+  let p = HEADER.length;
+  for (let y = 0; y < height; y++) {
+    const rowOffset = y * width;
+    for (let xByte = 0; xByte < widthBytes; xByte++) {
+      let byteVal = 0;
+      for (let bit = 0; bit < 8; bit++) {
+        const x = xByte * 8 + bit;
+        if (x >= width) break; // padding bits stay 0 (white)
 
-  for (let startY = 0; startY < height; startY += BAND_HEIGHT) {
-    const bandHeight = Math.min(BAND_HEIGHT, height - startY);
-    const yL = bandHeight % 256;
-    const yH = Math.floor(bandHeight / 256);
+        const idx = (rowOffset + x) * 4;
+        const a = rgba[idx + 3] / 255;
+        // Composite onto white so transparent pixels never count as black
+        const r = rgba[idx] * a + 255 * (1 - a);
+        const g = rgba[idx + 1] * a + 255 * (1 - a);
+        const b = rgba[idx + 2] * a + 255 * (1 - a);
+        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
 
-    // GS v 0 m xL xH yL yH
-    rasterData.push(0x1d, 0x76, 0x30, 0x00, xL, xH, yL, yH);
-
-    for (let y = startY; y < startY + bandHeight; y++) {
-      for (let xByte = 0; xByte < widthBytes; xByte++) {
-        let byteVal = 0;
-        for (let bit = 0; bit < 8; bit++) {
-          const x = xByte * 8 + bit;
-          if (x < width) {
-            const idx = (y * width + x) * 4;
-            const a = rgba[idx + 3];
-            let r = rgba[idx];
-            let g = rgba[idx + 1];
-            let b = rgba[idx + 2];
-
-            if (a < 128) {
-              // Transparent pixel is treated as white background
-              r = 255;
-              g = 255;
-              b = 255;
-            } else if (a < 255) {
-              // Composite onto solid white background
-              const alphaFrac = a / 255;
-              r = Math.round(r * alphaFrac + 255 * (1 - alphaFrac));
-              g = Math.round(g * alphaFrac + 255 * (1 - alphaFrac));
-              b = Math.round(b * alphaFrac + 255 * (1 - alphaFrac));
-            }
-
-            // ITU-R BT.601 standard luminance
-            const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-
-            // Black dot on thermal paper
-            if (luminance <= THRESHOLD) {
-              byteVal |= 1 << (7 - bit);
-            }
-          }
+        if (luminance < RASTER_THRESHOLD) {
+          byteVal |= 0x80 >> bit; // BLACK dot
         }
-        rasterData.push(byteVal);
       }
+      out[p++] = byteVal;
     }
   }
 
-  // Line feeds (4 lines) and partial cut (GS V B 0)
-  rasterData.push(0x0a, 0x0a, 0x0a, 0x0a);
-  rasterData.push(0x1d, 0x56, 0x42, 0x00);
-
-  return new Uint8Array(rasterData);
+  out.set(FOOTER, p);
+  return out;
 }
 
 /**
