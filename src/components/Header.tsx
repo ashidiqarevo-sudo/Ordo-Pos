@@ -262,8 +262,8 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={onOpenOnboarding}
-              title="Buka Buku Panduan / Tutorial"
-              aria-label="Buku Panduan"
+              title="Panduan & Alur Kerja Ordo POS"
+              aria-label="Panduan & Alur Kerja"
               className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800/90 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-zinc-700/80 flex items-center justify-center transition-all cursor-pointer shadow-xs active:scale-90"
             >
               <HelpCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />

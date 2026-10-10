@@ -264,7 +264,7 @@ export default function App() {
           setTheme('dark');
           applyThemeToDOM('dark');
           setIsStoreSetupDone(false);
-          setIsOnboardingDone(false);
+          setIsOnboardingDone(true);
           setIsAuthLoading(false);
           return;
         }
@@ -284,7 +284,7 @@ export default function App() {
                     setTheme(storeConfig.theme);
                     applyThemeToDOM(storeConfig.theme);
                     setIsStoreSetupDone(storeConfig.hasCompletedStoreSetup);
-                    setIsOnboardingDone(storeConfig.hasCompletedOnboarding);
+                    setIsOnboardingDone(true);
                   } else if (isMounted) {
                     setStoreSettings((prev) => ({
                       ...prev,
@@ -294,7 +294,7 @@ export default function App() {
                       storePhone: authUser.phone || prev.storePhone,
                     }));
                     setIsStoreSetupDone(authUser.hasCompletedStoreSetup ?? false);
-                    setIsOnboardingDone(authUser.hasCompletedOnboarding ?? false);
+                    setIsOnboardingDone(true);
                   }
                 } catch (configErr) {
                   console.error('[App] Gagal memuat pengaturan toko dari Supabase:', configErr);
@@ -404,7 +404,7 @@ export default function App() {
               setTheme(refreshed.theme);
               applyThemeToDOM(refreshed.theme);
               setIsStoreSetupDone(refreshed.hasCompletedStoreSetup);
-              setIsOnboardingDone(refreshed.hasCompletedOnboarding);
+              setIsOnboardingDone(true);
             }
           } catch (err) {
             console.error('[App] Realtime store update error:', err);
@@ -439,7 +439,7 @@ export default function App() {
 
   // Onboarding & Setup flags — dikelola oleh state cloud Supabase
   const [isStoreSetupDone, setIsStoreSetupDone] = useState<boolean>(false);
-  const [isOnboardingDone, setIsOnboardingDone] = useState<boolean>(false);
+  const [isOnboardingDone, setIsOnboardingDone] = useState<boolean>(true);
 
   // Explicit trigger to view onboarding or setup anytime
   const [showManualOnboarding, setShowManualOnboarding] = useState(false);
@@ -547,7 +547,7 @@ export default function App() {
           setTheme(storeConfig.theme);
           applyThemeToDOM(storeConfig.theme);
           setIsStoreSetupDone(storeConfig.hasCompletedStoreSetup);
-          setIsOnboardingDone(storeConfig.hasCompletedOnboarding);
+          setIsOnboardingDone(true);
         }
       });
     }
@@ -576,7 +576,7 @@ export default function App() {
     setTheme('dark');
     applyThemeToDOM('dark');
     setIsStoreSetupDone(false);
-    setIsOnboardingDone(false);
+    setIsOnboardingDone(true);
     // Bersihkan sisa-sisa storage lama jika masih ada
     try {
       localStorage.removeItem('ordo_servis_settings_v4');
@@ -1848,11 +1848,12 @@ export default function App() {
         onComplete={handleStoreSetupComplete}
       />
 
-      {/* 11. Prioritas 3: Tutorial Onboarding (4 Langkah) */}
+      {/* 11. Panduan & Alur Kerja Ordo POS (Hanya dibuka secara manual via tombol Bantuan/Info) */}
       <OnboardingModal
-        isOpen={Boolean(currentUser && isStoreSetupDone && (!isOnboardingDone || showManualOnboarding))}
+        isOpen={showManualOnboarding}
+        onClose={() => setShowManualOnboarding(false)}
         storeName={storeSettings.storeName}
-        onFinish={handleOnboardingFinish}
+        onFinish={() => setShowManualOnboarding(false)}
       />
 
       {/* 12. Modal Kritik & Saran (Kirim ke Email Pengembang) */}

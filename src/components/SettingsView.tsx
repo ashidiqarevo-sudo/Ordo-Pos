@@ -22,6 +22,7 @@ import {
   Lock,
   Eye,
   EyeOff,
+  BookOpen,
 } from 'lucide-react';
 import { LogoCropperModal } from './modals/LogoCropperModal';
 import { supabase } from '../lib/supabase';
@@ -360,7 +361,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   onClick={onOpenOnboarding}
                   className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
                 >
-                  <span>Tutorial 4 Langkah</span>
+                  <BookOpen className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Buku Panduan & Workflow</span>
                 </button>
               )}
             </div>
