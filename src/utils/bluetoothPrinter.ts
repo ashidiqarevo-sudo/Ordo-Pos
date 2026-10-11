@@ -1,15 +1,34 @@
 /**
- * Web Bluetooth Direct ESC/POS & Android Classic/SPP Bridge Thermal Printing Utility.
+ * ORDO Universal Thermal Printer Module
+ * =====================================
  *
- * Supports:
- * 1. Direct Web Bluetooth (BLE / GATT Profile) with persistent device caching
- * 2. Android Bluetooth Classic/SPP Bridge via RawBT intent protocol
+ * One file, four lanes. No device sniffing is needed to make output correct:
+ * every lane renders the receipt at a FIXED printer-native width, so a narrow
+ * phone viewport can never squeeze the layout.
+ *
+ *   LANE 1 - Canvas Render   : DOM -> fixed-width (384 / 576 px) opaque white canvas.
+ *   LANE 2 - RawBT (Android) : Canvas -> ONE `GS v 0` raster image -> base64 -> intent URL.
+ *   LANE 3 - System Print    : Isolated iframe + thermal @page CSS -> window.print().
+ *   LANE 4 - BLE Direct      : Canvas -> ESC/POS -> 200-byte paced GATT writes.
+ *
+ * Public API is backward compatible with the previous module.
  */
 import { toCanvas } from 'html-to-image';
 
+/* ========================================================================== */
+/* Public types & constants                                                   */
+/* ========================================================================== */
+
 export interface BluetoothPrintOptions {
-  paperWidthMm: number; // 58, 80, or custom
-  onStatusChange?: (status: string) => void;
+  /** Paper width in millimetres (58, 80, or custom). */
+  paperWidthMm: number;
+  onStatusChange?: StatusCallback;
+}
+
+export interface SystemPrintOptions {
+  paperWidthMm: number;
+  onComplete?: () => void;
+  onError?: (err: Error) => void;
 }
 
 export interface SavedBluetoothPrinter {
@@ -17,23 +36,88 @@ export interface SavedBluetoothPrinter {
   name: string;
 }
 
+export type StatusCallback = (status: string) => void;
+
 export const STORAGE_KEY_BT_PRINTER = 'ordo_bluetooth_printer';
 export const STORAGE_KEY_PRINT_METHOD = 'ordo_print_method';
 
-// Common Bluetooth Low Energy (BLE) Thermal Printer Service UUIDs
+/** Printhead width in dots for 203 DPI thermal printers. */
+const DOTS_58MM = 384; // 48 bytes per raster row
+const DOTS_80MM = 576; // 72 bytes per raster row
+
+/** Pixels with luminance below this value become a black (heated) dot. */
+const INK_THRESHOLD = 200;
+
+/** BLE pacing: payload per write and pause between writes (cheap printer buffers are tiny). */
+const BLE_CHUNK_SIZE = 200;
+const BLE_FALLBACK_CHUNK_SIZE = 20; // ATT MTU 23 - 3 header bytes
+const BLE_CHUNK_DELAY_MS = 20;
+
+/** Common BLE thermal-printer GATT service UUIDs. */
 const PRINTER_SERVICES = [
   '000018f0-0000-1000-8000-00805f9b34fb', // Standard ESC/POS
   '0000e0ff-0000-1000-8000-00805f9b34fb',
   '0000ff00-0000-1000-8000-00805f9b34fb',
-  '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC
+  '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC / Microchip
   'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
 ];
 
-// In-memory active BluetoothDevice reference for the current web session
-let cachedBluetoothDevice: any = null;
+const RAWBT_PACKAGE = 'ru.a402d.rawbtprinter';
+
+/* ========================================================================== */
+/* Small shared helpers                                                       */
+/* ========================================================================== */
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+function toError(err: unknown, fallback: string): Error {
+  if (err instanceof Error) return err;
+  if (typeof err === 'string' && err) return new Error(err);
+  return new Error(fallback);
+}
+
+/** Waits two animation frames so freshly inserted DOM is laid out AND painted. */
+function waitForPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame !== 'function') {
+      setTimeout(resolve, 50);
+      return;
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+}
+
+/** Resolves once every <img> under `root` has loaded or failed (max `timeoutMs` each). */
+async function waitForImages(root: ParentNode, timeoutMs = 1500): Promise<void> {
+  const images = Array.from(root.querySelectorAll('img'));
+  await Promise.all(
+    images.map(
+      (img) =>
+        new Promise<void>((resolve) => {
+          if (img.complete) return resolve();
+          const done = () => resolve();
+          img.addEventListener('load', done, { once: true });
+          img.addEventListener('error', done, { once: true });
+          setTimeout(done, timeoutMs);
+        })
+    )
+  );
+}
+
+async function waitForFonts(doc: Document): Promise<void> {
+  try {
+    await doc.fonts?.ready;
+  } catch {
+    // Font loading API unavailable / failed -> continue with fallback fonts.
+  }
+}
+
+/* ========================================================================== */
+/* Environment & persistence                                                  */
+/* ========================================================================== */
 
 export function isBluetoothSupported(): boolean {
-  return typeof navigator !== 'undefined' && 'bluetooth' in navigator;
+  return getBluetoothApi() !== null;
 }
 
 export function isAndroidDevice(): boolean {
@@ -44,7 +128,16 @@ export function getSavedBluetoothPrinter(): SavedBluetoothPrinter | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_BT_PRINTER);
     if (!raw) return null;
-    return JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      typeof (parsed as SavedBluetoothPrinter).id === 'string' &&
+      typeof (parsed as SavedBluetoothPrinter).name === 'string'
+    ) {
+      return parsed as SavedBluetoothPrinter;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -58,158 +151,157 @@ export function saveBluetoothPrinter(printer: SavedBluetoothPrinter | null): voi
       localStorage.removeItem(STORAGE_KEY_BT_PRINTER);
     }
   } catch {
-    // LocalStorage failsafe
-  }
-}
-
-export function clearSavedBluetoothPrinter(): void {
-  if (cachedBluetoothDevice?.gatt?.connected) {
-    try {
-      cachedBluetoothDevice.gatt.disconnect();
-    } catch {
-      // ignore
-    }
-  }
-  cachedBluetoothDevice = null;
-  saveBluetoothPrinter(null);
-}
-
-/**
- * Explicit user-gesture device discovery (requestDevice) for BLE.
- * Only triggered on:
- * 1. Initial connection ("Hubungkan Printer")
- * 2. Changing printer ("Ganti Printer")
- * 3. Re-pairing when connection lost/revoked ("Hubungkan Kembali")
- */
-export async function pairBluetoothPrinter(
-  onStatusChange?: (status: string) => void
-): Promise<SavedBluetoothPrinter> {
-  if (!isBluetoothSupported()) {
-    throw new Error(
-      'Web Bluetooth tidak didukung pada browser/perangkat ini. Silakan gunakan Google Chrome/Microsoft Edge atau gunakan opsi Print Sistem / Android Bridge.'
-    );
-  }
-
-  onStatusChange?.('Mencari printer Bluetooth BLE...');
-  let device: any;
-  try {
-    device = await (navigator as any).bluetooth.requestDevice({
-      acceptAllDevices: true,
-      optionalServices: PRINTER_SERVICES,
-    });
-  } catch (err: any) {
-    if (err.name === 'NotFoundError') {
-      throw new Error('Pencarian printer dibatalkan.');
-    }
-    throw new Error(`Gagal mendeteksi printer: ${err.message || err}`);
-  }
-
-  if (!device || !device.gatt) {
-    throw new Error('Perangkat Bluetooth yang dipilih tidak memiliki antarmuka GATT.');
-  }
-
-  onStatusChange?.('Menghubungkan ke printer...');
-  try {
-    if (!device.gatt.connected) {
-      await device.gatt.connect();
-    }
-  } catch (connErr: any) {
-    throw new Error(`Printer tidak dapat dihubungkan: ${connErr.message || connErr}`);
-  }
-
-  cachedBluetoothDevice = device;
-  const printerInfo: SavedBluetoothPrinter = {
-    id: device.id || 'bt-printer',
-    name: device.name || 'Printer Bluetooth',
-  };
-  saveBluetoothPrinter(printerInfo);
-
-  return printerInfo;
-}
-
-/**
- * Attempts to retrieve an active or previously permitted BluetoothDevice WITHOUT triggering discovery scan.
- */
-export async function getBluetoothDeviceWithoutDiscovery(): Promise<any> {
-  if (cachedBluetoothDevice) {
-    return cachedBluetoothDevice;
-  }
-
-  const saved = getSavedBluetoothPrinter();
-
-  if (
-    typeof navigator !== 'undefined' &&
-    'bluetooth' in navigator &&
-    typeof (navigator as any).bluetooth?.getDevices === 'function'
-  ) {
-    try {
-      const devices = await (navigator as any).bluetooth.getDevices();
-      if (devices && devices.length > 0) {
-        const match = saved?.id ? devices.find((d: any) => d.id === saved.id) : null;
-        const target = match || (saved ? devices[0] : null);
-        if (target) {
-          cachedBluetoothDevice = target;
-          return target;
-        }
-      }
-    } catch {
-      // getDevices not permitted or failed
-    }
-  }
-
-  if (saved) {
-    throw new Error('PRINTER_RECONNECT_NEEDED');
-  } else {
-    throw new Error('PRINTER_NOT_PAIRED');
+    // Storage blocked (private mode / quota) -> non-fatal.
   }
 }
 
 /**
- * Calculates target dot width according to standard 203 DPI thermal printheads.
- * 58mm: 384 dots (48 bytes per line)
- * 80mm: 576 dots (72 bytes per line)
- * Custom: proportional multiple of 8
+ * Maps paper width to printhead dots. Always one of the two native widths,
+ * both of which are exact multiples of 8 (required by `GS v 0`).
  */
 export function getTargetDotsWidth(paperWidthMm: number): number {
-  if (paperWidthMm <= 60) {
-    return 384;
-  }
-  if (paperWidthMm >= 76) {
-    return 576;
-  }
-  const dots = Math.round((paperWidthMm / 58) * 384);
-  return Math.max(384, Math.floor(dots / 8) * 8);
+  return paperWidthMm >= 70 ? DOTS_80MM : DOTS_58MM;
 }
 
-/** Luminance threshold: pixels darker than this become a BLACK dot (bit = 1). */
-const RASTER_THRESHOLD = 200;
+/* ========================================================================== */
+/* LANE 1 - Canvas Render (universal, viewport-independent)                   */
+/* ========================================================================== */
 
-/** Waits for the browser to complete layout + paint of freshly inserted DOM. */
-function waitForPaint(): Promise<void> {
-  return new Promise((resolve) => {
-    if (typeof requestAnimationFrame !== 'function') {
-      setTimeout(resolve, 50);
-      return;
-    }
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-  });
+/**
+ * High-contrast thermal stylesheet applied ONLY to the off-screen clone.
+ * Scoped by `.ordo-thermal-clone` so the live UI is never affected.
+ */
+const THERMAL_CLONE_CSS = `
+  .ordo-thermal-clone,
+  .ordo-thermal-clone * {
+    color: #000000 !important;
+    -webkit-text-fill-color: #000000 !important;
+    border-color: #000000 !important;
+    text-shadow: none !important;
+    box-shadow: none !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    mix-blend-mode: normal !important;
+    max-width: none;
+  }
+  .ordo-thermal-clone {
+    background: #FFFFFF !important;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif !important;
+    line-height: 1.25 !important;
+  }
+  .ordo-thermal-clone div:not(.bg-black):not(.bg-zinc-950),
+  .ordo-thermal-clone span,
+  .ordo-thermal-clone p {
+    background-color: transparent !important;
+  }
+  .ordo-thermal-clone span,
+  .ordo-thermal-clone p,
+  .ordo-thermal-clone div { font-weight: 600; }
+  .ordo-thermal-clone .font-normal { font-weight: 500 !important; }
+  .ordo-thermal-clone .font-bold,
+  .ordo-thermal-clone .font-black { font-weight: 900 !important; }
+  .ordo-thermal-clone .border-dashed {
+    border-bottom-style: dashed !important;
+    border-bottom-width: 1px !important;
+  }
+  .ordo-thermal-clone .text-\\[8px\\],
+  .ordo-thermal-clone .text-\\[8\\.5px\\] { font-size: 9.5px !important; line-height: 1.15 !important; }
+  .ordo-thermal-clone .text-\\[10px\\] { font-size: 10.5px !important; }
+  .ordo-thermal-clone .text-\\[11px\\] { font-size: 11px !important; }
+  .ordo-thermal-clone .text-xs { font-size: 12px !important; }
+  .ordo-thermal-clone img {
+    max-width: 100% !important;
+    height: auto !important;
+    filter: grayscale(100%) contrast(140%) !important;
+  }
+`;
+
+/** Forces a fixed, non-shrinkable width on an element. */
+function lockWidth(el: HTMLElement, widthPx: number): void {
+  el.style.boxSizing = 'border-box';
+  el.style.width = `${widthPx}px`;
+  el.style.minWidth = `${widthPx}px`;
+  el.style.maxWidth = `${widthPx}px`;
+  el.style.flex = 'none';
 }
 
 /**
- * Draws any canvas onto a brand-new, fully opaque solid-white canvas of the exact target width.
- * Guarantees there are no transparent pixels left for the thresholding step.
+ * Builds an off-screen staging area whose width is LOCKED to the printhead width.
+ *
+ * Why this fixes the "mie lidi" (thin strip) bug on phones:
+ * the clone no longer inherits its width from the narrow modal / viewport.
+ * Host, capture node and clone all carry an absolute pixel width with
+ * min-width = max-width, so nothing can shrink them.
+ *
+ * Only the HOST is moved off-screen. The CAPTURE node stays `position: static`
+ * at (0,0) inside it - otherwise html-to-image would copy the off-screen offset
+ * into the SVG and produce a blank image.
  */
-function flattenOntoWhite(source: HTMLCanvasElement, requestedWidth: number): HTMLCanvasElement {
-  // Raster width must be an exact multiple of 8 dots (1 byte = 8 horizontal dots)
-  const targetWidth = Math.max(8, Math.floor(requestedWidth / 8) * 8);
-  const scale = targetWidth / source.width;
-  const out = document.createElement('canvas');
-  out.width = targetWidth;
-  out.height = Math.max(1, Math.round(source.height * scale));
-  const ctx = out.getContext('2d', { willReadFrequently: true } as CanvasRenderingContext2DSettings);
-  if (!ctx) {
-    throw new Error('Gagal mendapatkan 2D context canvas.');
+function createStaging(source: HTMLElement, widthPx: number, paperWidthMm: number) {
+  const host = document.createElement('div');
+  host.setAttribute('aria-hidden', 'true');
+  Object.assign(host.style, {
+    position: 'fixed',
+    left: '-20000px',
+    top: '0',
+    overflow: 'visible',
+    pointerEvents: 'none',
+    zIndex: '-1',
+    contain: 'layout style',
+  } satisfies Partial<CSSStyleDeclaration>);
+  lockWidth(host, widthPx);
+
+  const capture = document.createElement('div');
+  Object.assign(capture.style, {
+    position: 'static',
+    margin: '0',
+    padding: '0',
+    background: '#FFFFFF',
+    color: '#000000',
+  } satisfies Partial<CSSStyleDeclaration>);
+  lockWidth(capture, widthPx);
+
+  const clone = source.cloneNode(true) as HTMLElement;
+  clone.classList.add('ordo-thermal-clone');
+  clone.removeAttribute('id');
+  lockWidth(clone, widthPx);
+  clone.style.margin = '0';
+  clone.style.background = '#FFFFFF';
+  clone.style.padding = paperWidthMm >= 70 ? '10px 8px' : '6px 4px';
+
+  const style = document.createElement('style');
+  style.textContent = THERMAL_CLONE_CSS;
+
+  capture.append(style, clone);
+  host.appendChild(capture);
+  document.body.appendChild(host);
+
+  return { capture, destroy: () => host.remove() };
+}
+
+/** Returns true if the canvas contains at least one pixel that will print black. */
+function canvasHasInk(canvas: HTMLCanvasElement): boolean {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return false;
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  for (let i = 0; i < data.length; i += 4) {
+    if (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2] < INK_THRESHOLD) {
+      return true;
+    }
   }
+  return false;
+}
+
+/** Copies `source` onto a brand-new fully opaque #FFFFFF canvas of exactly `width` px. */
+function flattenOntoWhite(source: HTMLCanvasElement, width: number): HTMLCanvasElement {
+  const scale = width / source.width;
+  const out = document.createElement('canvas');
+  out.width = width;
+  out.height = Math.max(1, Math.round(source.height * scale));
+
+  const ctx = out.getContext('2d', { willReadFrequently: true });
+  if (!ctx) throw new Error('Gagal membuat konteks canvas 2D.');
+
   ctx.fillStyle = '#FFFFFF';
   ctx.fillRect(0, 0, out.width, out.height);
   ctx.imageSmoothingEnabled = scale !== 1;
@@ -217,529 +309,566 @@ function flattenOntoWhite(source: HTMLCanvasElement, requestedWidth: number): HT
   return out;
 }
 
-/** Counts pixels that will become black dots. Used to detect a blank render before wasting paper. */
-function countDarkPixels(canvas: HTMLCanvasElement): number {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return 0;
-  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  let dark = 0;
-  for (let i = 0; i < data.length; i += 4) {
-    const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-    if (lum < RASTER_THRESHOLD) dark++;
-  }
-  return dark;
-}
-
 /**
- * Renders HTML receipt element directly to 1-bit monochrome ESC/POS raster data.
- *
- * BLANK-PRINT FIX:
- * Previously the node passed to html-to-image was the offscreen wrapper itself
- * (`position: fixed; left: -99999px`). html-to-image copies the root node's computed style
- * into the SVG <foreignObject>, so the receipt content was drawn 99999px outside the canvas
- * and only the white backgroundColor remained -> 100% white image / blank paper.
- *
- * Now:
- * 1. An offscreen HOST div is positioned off-screen, but the CAPTURED node inside it is
- *    `position: static` at (0,0), and positioning is also force-reset via the `style` option.
- * 2. Output is flattened onto an opaque #FFFFFF canvas.
- * 3. Text/borders are forced to pure #000000.
- * 4. Render is verified to contain dark pixels (retried once; WebKit often returns blank on 1st pass).
+ * LANE 1: Renders a receipt element into an opaque white canvas whose width is
+ * exactly the printhead width (384 px for 58 mm, 576 px for 80 mm).
+ * Throws if the result is blank so no paper is wasted.
  */
-export async function renderReceiptToEscPosRaster(
+export async function renderReceiptToCanvas(
   receiptElement: HTMLElement,
   paperWidthMm: number
-): Promise<Uint8Array> {
-  const targetDotsWidth = getTargetDotsWidth(paperWidthMm);
-
-  // 1a. Offscreen HOST (only this element is moved off-screen; it is NOT captured)
-  const hostContainer = document.createElement('div');
-  hostContainer.id = 'ordo-thermal-raster-host';
-  hostContainer.setAttribute('aria-hidden', 'true');
-  hostContainer.style.position = 'fixed';
-  hostContainer.style.left = '-10000px';
-  hostContainer.style.top = '0';
-  hostContainer.style.width = `${targetDotsWidth}px`;
-  hostContainer.style.overflow = 'visible';
-  hostContainer.style.pointerEvents = 'none';
-  hostContainer.style.zIndex = '-1';
-
-  // 1b. CAPTURE node: static, in normal flow, solid white background, exact dot width
-  const stagingWrapper = document.createElement('div');
-  stagingWrapper.id = 'ordo-thermal-raster-staging';
-  stagingWrapper.style.position = 'static';
-  stagingWrapper.style.width = `${targetDotsWidth}px`;
-  stagingWrapper.style.maxWidth = `${targetDotsWidth}px`;
-  stagingWrapper.style.minWidth = `${targetDotsWidth}px`;
-  stagingWrapper.style.backgroundColor = '#FFFFFF';
-  stagingWrapper.style.color = '#000000';
-  stagingWrapper.style.margin = '0';
-  stagingWrapper.style.padding = '0';
-  stagingWrapper.style.opacity = '1';
-  stagingWrapper.style.boxSizing = 'border-box';
-
-  // 2. Clone receipt content
-  const receiptClone = receiptElement.cloneNode(true) as HTMLElement;
-  receiptClone.classList.add('thermal-receipt-clone');
-  receiptClone.style.width = `${targetDotsWidth}px`;
-  receiptClone.style.maxWidth = `${targetDotsWidth}px`;
-  receiptClone.style.minWidth = `${targetDotsWidth}px`;
-  receiptClone.style.backgroundColor = '#ffffff';
-  receiptClone.style.color = '#000000';
-  receiptClone.style.boxSizing = 'border-box';
-  receiptClone.style.padding = paperWidthMm <= 60 ? '6px 4px' : '10px 8px';
-
-  // 3. Inject strict high-contrast thermal CSS rules into staging container
-  const styleTag = document.createElement('style');
-  styleTag.textContent = `
-    .thermal-receipt-clone,
-    .thermal-receipt-clone * {
-      color: #000000 !important;
-      -webkit-text-fill-color: #000000 !important;
-      border-color: #000000 !important;
-      text-shadow: none !important;
-      box-shadow: none !important;
-      opacity: 1 !important;
-      visibility: visible !important;
-      mix-blend-mode: normal !important;
-      -webkit-font-smoothing: antialiased !important;
-      -moz-osx-font-smoothing: grayscale !important;
-    }
-    .thermal-receipt-clone {
-      background-color: #ffffff !important;
-      color: #000000 !important;
-      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
-      line-height: 1.25 !important;
-    }
-    .thermal-receipt-clone div:not(.bg-black):not(.bg-zinc-950),
-    .thermal-receipt-clone span,
-    .thermal-receipt-clone p {
-      background-color: transparent !important;
-    }
-    .thermal-receipt-clone .border-b,
-    .thermal-receipt-clone .border-t,
-    .thermal-receipt-clone .border-y,
-    .thermal-receipt-clone .border {
-      border-color: #000000 !important;
-    }
-    .thermal-receipt-clone .border-dashed {
-      border-bottom-style: dashed !important;
-      border-bottom-width: 1px !important;
-      border-color: #000000 !important;
-    }
-    .thermal-receipt-clone span,
-    .thermal-receipt-clone p,
-    .thermal-receipt-clone div {
-      font-weight: 600;
-    }
-    .thermal-receipt-clone .font-normal {
-      font-weight: 500 !important;
-    }
-    .thermal-receipt-clone .font-bold,
-    .thermal-receipt-clone .font-black {
-      font-weight: 900 !important;
-    }
-    .thermal-receipt-clone .text-\\[8px\\],
-    .thermal-receipt-clone .text-\\[8\\.5px\\] {
-      font-size: 9.5px !important;
-      line-height: 1.15 !important;
-    }
-    .thermal-receipt-clone .text-\\[10px\\] {
-      font-size: 10.5px !important;
-    }
-    .thermal-receipt-clone .text-\\[11px\\] {
-      font-size: 11px !important;
-    }
-    .thermal-receipt-clone .text-xs {
-      font-size: 12px !important;
-    }
-    .thermal-receipt-clone img {
-      max-width: 100% !important;
-      height: auto !important;
-      filter: grayscale(100%) contrast(140%) !important;
-    }
-  `;
-
-  stagingWrapper.appendChild(styleTag);
-  stagingWrapper.appendChild(receiptClone);
-  hostContainer.appendChild(stagingWrapper);
-  document.body.appendChild(hostContainer);
+): Promise<HTMLCanvasElement> {
+  const width = getTargetDotsWidth(paperWidthMm);
+  const staging = createStaging(receiptElement, width, paperWidthMm);
 
   try {
-    // 4. Wait for fonts and images
-    if (typeof document !== 'undefined' && 'fonts' in document) {
-      try {
-        await document.fonts.ready;
-      } catch {
-        // ignore font ready errors
-      }
-    }
-
-    const images = Array.from(stagingWrapper.querySelectorAll('img'));
-    if (images.length > 0) {
-      await Promise.all(
-        images.map(
-          (img) =>
-            new Promise<void>((resolve) => {
-              if (img.complete) return resolve();
-              img.onload = () => resolve();
-              img.onerror = () => resolve();
-              setTimeout(resolve, 1500);
-            })
-        )
-      );
-    }
-
-    // Ensure layout & paint are complete before measuring/capturing
+    await waitForFonts(document);
+    await waitForImages(staging.capture);
     await waitForPaint();
 
-    const captureHeight = Math.max(
-      1,
-      Math.ceil(stagingWrapper.scrollHeight || stagingWrapper.getBoundingClientRect().height)
-    );
+    const height = Math.max(1, Math.ceil(staging.capture.scrollHeight));
 
     const renderOnce = async (skipFonts: boolean): Promise<HTMLCanvasElement> => {
-      const raw = await toCanvas(stagingWrapper, {
+      const raw = await toCanvas(staging.capture, {
         backgroundColor: '#FFFFFF',
         pixelRatio: 1,
-        width: targetDotsWidth,
-        height: captureHeight,
-        canvasWidth: targetDotsWidth,
-        canvasHeight: captureHeight,
+        width,
+        height,
+        canvasWidth: width,
+        canvasHeight: height,
         skipFonts,
         cacheBust: false,
-        // Force the cloned ROOT back to (0,0) inside the SVG foreignObject.
-        // Without this, any inherited fixed/offscreen positioning pushes content out of frame.
+        // Reset the cloned ROOT inside the SVG foreignObject to (0,0) at the locked width.
         style: {
           position: 'static',
           left: '0',
           top: '0',
-          right: 'auto',
-          bottom: 'auto',
           transform: 'none',
-          opacity: '1',
-          visibility: 'visible',
-          width: `${targetDotsWidth}px`,
-          maxWidth: `${targetDotsWidth}px`,
           margin: '0',
-          padding: '0',
+          width: `${width}px`,
+          minWidth: `${width}px`,
+          maxWidth: `${width}px`,
           backgroundColor: '#FFFFFF',
         },
       });
-      return flattenOntoWhite(raw, targetDotsWidth);
+      return flattenOntoWhite(raw, width);
     };
 
-    // 5. Render, verify there is actual ink, retry once if blank
-    let finalCanvas: HTMLCanvasElement;
+    let canvas: HTMLCanvasElement;
     try {
-      finalCanvas = await renderOnce(false);
+      canvas = await renderOnce(false);
     } catch {
-      // Web-font embedding (CORS) failure -> render with system fonts instead
-      finalCanvas = await renderOnce(true);
+      // Web-font embedding can fail on CORS -> retry with system fonts.
+      canvas = await renderOnce(true);
     }
 
-    if (countDarkPixels(finalCanvas) === 0) {
-      // WebKit/Android WebView frequently produce an empty first frame (images/fonts not yet decoded in SVG)
+    // WebKit / Android WebView often return an empty first frame -> retry once.
+    if (!canvasHasInk(canvas)) {
       await waitForPaint();
-      finalCanvas = await renderOnce(true);
+      canvas = await renderOnce(true);
     }
 
-    if (countDarkPixels(finalCanvas) === 0) {
+    if (!canvasHasInk(canvas)) {
       throw new Error(
-        'Render nota menghasilkan gambar kosong. Pencetakan dibatalkan agar kertas tidak terbuang. Silakan coba lagi atau gunakan opsi "Print Sistem".'
+        'Render nota menghasilkan gambar kosong. Pencetakan dibatalkan agar kertas tidak terbuang. Coba lagi atau gunakan "Sistem Bawaan".'
       );
     }
-
-    return convertCanvasToEscPosRaster(finalCanvas);
+    return canvas;
   } finally {
-    if (hostContainer.parentNode) {
-      hostContainer.parentNode.removeChild(hostContainer);
-    }
+    staging.destroy();
   }
 }
 
-/**
- * Max rows per `GS v 0` band. Many cheap 58/80mm BT printers have a small receive buffer
- * (~4 KB) and/or cap yH. One giant image (e.g. 384x1500 = 72 KB) overflows that buffer;
- * the dropped bytes shift every following row (skew/stripes) and the leftover image bytes
- * are then interpreted as ASCII text (garbage at the bottom).
- * 64 rows * 72 bytes (80mm) = 4.6 KB per band.
- */
-const RASTER_BAND_HEIGHT = 64;
+/* ========================================================================== */
+/* ESC/POS raster encoder (shared by RawBT and BLE)                           */
+/* ========================================================================== */
 
 /**
- * Converts an opaque white-backed Canvas to ESC/POS `GS v 0` 1-bit raster bands.
+ * Encodes a canvas as a single ESC/POS `GS v 0` raster job.
  *
- * Bit semantics for GS v 0: 1 = BLACK dot (heat), 0 = WHITE (no heat). MSB = leftmost pixel.
- * Pixel rule: luminance < 200 -> BLACK (1); otherwise WHITE (0).
+ *   ESC @ | ESC a 0 | GS v 0 m xL xH yL yH | bitmap | LF x4 | GS V B 0
  *
- * Payload layout:
- *   ESC @ | ESC a 0 | { GS v 0 0 xL xH yL yH | widthBytes*bandH bytes } x N | LF x4 | GS V B 0
+ * - Width is padded up to a multiple of 8 (extra columns stay white).
+ * - xL/xH = bytes per row (little endian), yL/yH = rows (little endian).
+ * - The bitmap is EXACTLY widthBytes * height bytes, so the printer can never
+ *   read past the image into the footer ("byte shift / alien text").
+ * - Bit = 1 -> black dot. MSB = leftmost pixel.
  */
-function convertCanvasToEscPosRaster(canvas: HTMLCanvasElement): Uint8Array {
+function encodeCanvasToEscPos(canvas: HTMLCanvasElement): Uint8Array {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Gagal membaca konteks canvas 2D.');
+
   const srcWidth = canvas.width;
   const height = canvas.height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    throw new Error('Gagal mendapatkan 2D context canvas.');
-  }
-  if (srcWidth <= 0 || height <= 0) {
-    throw new Error('Ukuran gambar nota tidak valid.');
-  }
+  if (srcWidth <= 0 || height <= 0) throw new Error('Ukuran gambar nota tidak valid.');
+  if (height > 0xffff) throw new Error('Nota terlalu panjang untuk satu gambar raster.');
 
-  // 1. Raster width MUST be an exact multiple of 8 dots. Extra columns are padded white.
-  const width = Math.ceil(srcWidth / 8) * 8;
-  const widthBytes = width / 8; // integer by construction
-
+  const widthBytes = Math.ceil(srcWidth / 8);
   const rgba = ctx.getImageData(0, 0, srcWidth, height).data;
-  if (rgba.length !== srcWidth * height * 4) {
-    throw new Error('Data piksel canvas tidak lengkap.');
-  }
 
-  // 2. Pack pixels into a strictly-sized 1-bit bitmap: exactly widthBytes * height bytes.
-  const bitmap = new Uint8Array(widthBytes * height); // zero-filled = white
+  // 1. Pack 1-bit bitmap.
+  const bitmap = new Uint8Array(widthBytes * height); // zero = white
   for (let y = 0; y < height; y++) {
     const srcRow = y * srcWidth * 4;
     const dstRow = y * widthBytes;
     for (let x = 0; x < srcWidth; x++) {
-      const idx = srcRow + x * 4;
-      const a = rgba[idx + 3] / 255;
-      // Composite onto white so transparent pixels never count as black
-      const r = rgba[idx] * a + 255 * (1 - a);
-      const g = rgba[idx + 1] * a + 255 * (1 - a);
-      const b = rgba[idx + 2] * a + 255 * (1 - a);
-      const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-      if (luminance < RASTER_THRESHOLD) {
-        // x >> 3 = byte index in row, 7 - (x & 7) = bit position (MSB = leftmost dot)
-        bitmap[dstRow + (x >> 3)] |= 1 << (7 - (x & 7));
+      const i = srcRow + x * 4;
+      const alpha = rgba[i + 3] / 255;
+      // Composite on white so transparent pixels can never become black.
+      const lum =
+        (0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2]) * alpha + 255 * (1 - alpha);
+      if (lum < INK_THRESHOLD) {
+        bitmap[dstRow + (x >> 3)] |= 0x80 >> (x & 7);
       }
     }
   }
 
-  // 3. Assemble command stream with exact pre-computed size.
-  const INIT = [0x1b, 0x40, 0x1b, 0x61, 0x00]; // ESC @ (reset), ESC a 0 (left align)
-  const FOOTER = [
-    0x0a, 0x0a, 0x0a, 0x0a, // feed 4 lines
-    0x1d, 0x56, 0x42, 0x00, // GS V B 0 - partial cut
-  ];
-  const BAND_HEADER_LEN = 8;
-  const bandCount = Math.ceil(height / RASTER_BAND_HEIGHT);
-  const totalLen = INIT.length + bandCount * BAND_HEADER_LEN + bitmap.length + FOOTER.length;
+  // 2. Assemble command stream with a pre-computed exact length.
+  const header = new Uint8Array([
+    0x1b, 0x40, //                   ESC @   : initialise
+    0x1b, 0x61, 0x00, //             ESC a 0 : left align
+    0x1d, 0x76, 0x30, 0x00, //       GS v 0 m=0 (normal density)
+    widthBytes & 0xff, //            xL
+    (widthBytes >> 8) & 0xff, //     xH
+    height & 0xff, //                yL
+    (height >> 8) & 0xff, //         yH
+  ]);
+  const footer = new Uint8Array([
+    0x0a, 0x0a, 0x0a, 0x0a, //       feed 4 lines
+    0x1d, 0x56, 0x42, 0x00, //       GS V B 0 : partial cut
+  ]);
 
-  const out = new Uint8Array(totalLen);
-  let p = 0;
-  out.set(INIT, p);
-  p += INIT.length;
+  const job = new Uint8Array(header.length + bitmap.length + footer.length);
+  job.set(header, 0);
+  job.set(bitmap, header.length);
+  job.set(footer, header.length + bitmap.length);
+  return job;
+}
 
-  for (let y0 = 0; y0 < height; y0 += RASTER_BAND_HEIGHT) {
-    const bandH = Math.min(RASTER_BAND_HEIGHT, height - y0);
-    out[p++] = 0x1d; // GS
-    out[p++] = 0x76; // v
-    out[p++] = 0x30; // 0
-    out[p++] = 0x00; // m = 0 (normal density)
-    out[p++] = widthBytes & 0xff; // xL
-    out[p++] = (widthBytes >> 8) & 0xff; // xH
-    out[p++] = bandH & 0xff; // yL
-    out[p++] = (bandH >> 8) & 0xff; // yH
-    const start = y0 * widthBytes;
-    const end = start + bandH * widthBytes;
-    out.set(bitmap.subarray(start, end), p);
-    p += end - start;
+/** Renders a receipt element straight to ESC/POS raster bytes (Lane 1 + encoder). */
+export async function renderReceiptToEscPosRaster(
+  receiptElement: HTMLElement,
+  paperWidthMm: number
+): Promise<Uint8Array> {
+  const canvas = await renderReceiptToCanvas(receiptElement, paperWidthMm);
+  return encodeCanvasToEscPos(canvas);
+}
+
+/** Binary -> standard base64, chunked to stay clear of call-stack limits. */
+function bytesToBase64(bytes: Uint8Array): string {
+  const CHUNK = 0x8000;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
   }
+  return btoa(binary);
+}
 
-  out.set(FOOTER, p);
-  p += FOOTER.length;
+/* ========================================================================== */
+/* LANE 2 - RawBT (Android, Bluetooth Classic / SPP / USB)                    */
+/* ========================================================================== */
 
-  if (p !== totalLen) {
-    throw new Error(`ESC/POS byte mismatch: ditulis ${p}, dialokasikan ${totalLen}.`);
+/**
+ * LANE 2: Sends the receipt to the RawBT Android app as ONE raster image.
+ * Base64 is wrapped in `encodeURIComponent` so '+', '/' and '=' survive the intent URL.
+ */
+export async function printReceiptViaRawBt(
+  receiptElement: HTMLElement,
+  paperWidthMm: number,
+  onStatusChange?: StatusCallback
+): Promise<void> {
+  onStatusChange?.('Merender nota untuk printer thermal...');
+  const job = await renderReceiptToEscPosRaster(receiptElement, paperWidthMm);
+
+  onStatusChange?.('Meneruskan nota ke aplikasi RawBT...');
+  const payload = encodeURIComponent(bytesToBase64(job));
+  const intentUrl = `intent:base64,${payload}#Intent;scheme=rawbt;package=${RAWBT_PACKAGE};end;`;
+
+  launchUrl(intentUrl);
+  onStatusChange?.('Nota berhasil diteruskan ke RawBT!');
+}
+
+/** Opens a custom-scheme URL via a synthetic anchor click, with location fallback. */
+function launchUrl(url: string): void {
+  try {
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.rel = 'noopener';
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    setTimeout(() => anchor.remove(), 1000);
+  } catch {
+    window.location.href = url;
   }
-  return out;
+}
+
+/* ========================================================================== */
+/* LANE 3 - System Print (PC / browser print dialog)                          */
+/* ========================================================================== */
+
+const PX_TO_MM = 25.4 / 96;
+
+function buildPrintDocument(receiptHtml: string, paperWidthMm: number): string {
+  const inheritedStyles = Array.from(
+    document.querySelectorAll<HTMLElement>('style, link[rel="stylesheet"]')
+  )
+    .map((el) => el.outerHTML)
+    .join('\n');
+
+  const padding = paperWidthMm >= 70 ? '3mm 2mm' : '2mm 1.5mm';
+  const fontSize = paperWidthMm >= 70 ? '11px' : '10px';
+
+  return `<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Nota</title>
+  ${inheritedStyles}
+  <style>
+    @page { size: ${paperWidthMm}mm auto; margin: 0; }
+    *, *::before, *::after {
+      box-sizing: border-box !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      width: ${paperWidthMm}mm !important;
+      min-width: ${paperWidthMm}mm !important;
+      max-width: ${paperWidthMm}mm !important;
+      background: #FFFFFF !important;
+      color: #000000 !important;
+      overflow: visible !important;
+    }
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif !important;
+      font-size: ${fontSize} !important;
+      line-height: 1.25 !important;
+    }
+    #ordo-print-root {
+      width: ${paperWidthMm}mm !important;
+      max-width: ${paperWidthMm}mm !important;
+      margin: 0 !important;
+      padding: ${padding} !important;
+      background: #FFFFFF !important;
+      color: #000000 !important;
+    }
+    img { max-width: 100% !important; height: auto !important; }
+  </style>
+</head>
+<body><div id="ordo-print-root">${receiptHtml}</div></body>
+</html>`;
 }
 
 /**
- * Helper to encode binary Uint8Array into standard Base64 string in chunks
- * to avoid call stack limits on large binary payloads.
+ * LANE 3: Prints ONLY the receipt through an isolated hidden iframe.
+ * The app UI is never part of the printed document, and the page is sized to
+ * the thermal roll width with an exact height (no trailing blank page).
  */
-function uint8ArrayToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  const chunkSize = 8192;
-  const len = bytes.length;
-  for (let i = 0; i < len; i += chunkSize) {
-    const chunk = bytes.subarray(i, Math.min(i + chunkSize, len));
-    for (let j = 0; j < chunk.length; j++) {
-      binary += String.fromCharCode(chunk[j]);
+export function printReceiptViaSystem(
+  receiptElement: HTMLElement,
+  options: SystemPrintOptions
+): Promise<void> {
+  const { paperWidthMm, onComplete, onError } = options;
+  const IFRAME_ID = 'ordo-system-print-frame';
+
+  return new Promise<void>((resolve, reject) => {
+    document.getElementById(IFRAME_ID)?.remove();
+
+    const iframe = document.createElement('iframe');
+    const fail = (err: unknown) => {
+      const error = toError(err, 'Gagal membuka dialog cetak.');
+      iframe.remove();
+      onError?.(error);
+      reject(error);
+    };
+
+    iframe.id = IFRAME_ID;
+    iframe.title = 'Receipt Print Frame';
+    iframe.setAttribute('aria-hidden', 'true');
+    Object.assign(iframe.style, {
+      position: 'fixed',
+      right: '0',
+      bottom: '0',
+      width: `${paperWidthMm}mm`,
+      height: '0',
+      border: '0',
+      opacity: '0',
+      pointerEvents: 'none',
+      zIndex: '-1',
+    } satisfies Partial<CSSStyleDeclaration>);
+
+    iframe.addEventListener(
+      'load',
+      async () => {
+        try {
+          const win = iframe.contentWindow;
+          const doc = iframe.contentDocument;
+          if (!win || !doc) throw new Error('Dokumen cetak tidak dapat diakses.');
+
+          await waitForFonts(doc);
+          await waitForImages(doc);
+
+          // Exact page height = content height, so thermal printers don't feed a blank page.
+          const root = doc.getElementById('ordo-print-root');
+          if (root) {
+            const heightMm = Math.ceil(root.scrollHeight * PX_TO_MM) + 4;
+            const pageStyle = doc.createElement('style');
+            pageStyle.textContent = `@page { size: ${paperWidthMm}mm ${heightMm}mm; margin: 0; }`;
+            doc.head.appendChild(pageStyle);
+          }
+
+          const cleanup = () => setTimeout(() => iframe.remove(), 500);
+          win.addEventListener('afterprint', cleanup, { once: true });
+          setTimeout(() => iframe.remove(), 60_000); // safety net if afterprint never fires
+
+          win.focus();
+          win.print();
+
+          onComplete?.();
+          resolve();
+        } catch (err) {
+          fail(err);
+        }
+      },
+      { once: true }
+    );
+
+    try {
+      iframe.srcdoc = buildPrintDocument(receiptElement.innerHTML, paperWidthMm);
+      document.body.appendChild(iframe);
+    } catch (err) {
+      fail(err);
+    }
+  });
+}
+
+/* ========================================================================== */
+/* LANE 4 - BLE Direct (Web Bluetooth GATT)                                   */
+/* ========================================================================== */
+
+/* Minimal Web Bluetooth typings (avoids a dependency on @types/web-bluetooth). */
+interface BleCharacteristic {
+  readonly properties: { readonly write: boolean; readonly writeWithoutResponse: boolean };
+  writeValue(value: Uint8Array): Promise<void>;
+  writeValueWithResponse?(value: Uint8Array): Promise<void>;
+  writeValueWithoutResponse?(value: Uint8Array): Promise<void>;
+}
+interface BleService {
+  getCharacteristics(): Promise<BleCharacteristic[]>;
+}
+interface BleGattServer {
+  readonly connected: boolean;
+  connect(): Promise<BleGattServer>;
+  disconnect(): void;
+  getPrimaryService(uuid: string): Promise<BleService>;
+  getPrimaryServices(): Promise<BleService[]>;
+}
+interface BleDevice {
+  readonly id: string;
+  readonly name?: string;
+  readonly gatt?: BleGattServer;
+}
+interface BleApi {
+  requestDevice(options: { acceptAllDevices: boolean; optionalServices: string[] }): Promise<BleDevice>;
+  getDevices?(): Promise<BleDevice[]>;
+}
+
+/** Active device for the current page session. */
+let activeDevice: BleDevice | null = null;
+
+function getBluetoothApi(): BleApi | null {
+  if (typeof navigator === 'undefined') return null;
+  return (navigator as Navigator & { bluetooth?: BleApi }).bluetooth ?? null;
+}
+
+function requireBluetoothApi(): BleApi {
+  const api = getBluetoothApi();
+  if (!api) {
+    throw new Error(
+      'Web Bluetooth tidak didukung di browser ini. Gunakan Chrome/Edge, atau pilih "Bluetooth (RawBT)" / "Sistem Bawaan".'
+    );
+  }
+  return api;
+}
+
+export function clearSavedBluetoothPrinter(): void {
+  try {
+    if (activeDevice?.gatt?.connected) activeDevice.gatt.disconnect();
+  } catch {
+    // Already disconnected.
+  }
+  activeDevice = null;
+  saveBluetoothPrinter(null);
+}
+
+/**
+ * Explicit user-gesture pairing (opens the browser device chooser).
+ * Use for "Hubungkan Printer", "Ganti Printer", and "Hubungkan Kembali".
+ */
+export async function pairBluetoothPrinter(
+  onStatusChange?: StatusCallback
+): Promise<SavedBluetoothPrinter> {
+  const api = requireBluetoothApi();
+
+  onStatusChange?.('Mencari printer Bluetooth BLE...');
+  let device: BleDevice;
+  try {
+    device = await api.requestDevice({ acceptAllDevices: true, optionalServices: PRINTER_SERVICES });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'NotFoundError') {
+      throw new Error('Pencarian printer dibatalkan.');
+    }
+    throw new Error(`Gagal mendeteksi printer: ${toError(err, 'unknown').message}`);
+  }
+
+  if (!device.gatt) {
+    throw new Error('Perangkat yang dipilih tidak memiliki antarmuka GATT (bukan printer BLE).');
+  }
+
+  onStatusChange?.('Menghubungkan ke printer...');
+  try {
+    if (!device.gatt.connected) await device.gatt.connect();
+  } catch (err) {
+    throw new Error(`Printer tidak dapat dihubungkan: ${toError(err, 'unknown').message}`);
+  }
+
+  activeDevice = device;
+  const info: SavedBluetoothPrinter = {
+    id: device.id || 'bt-printer',
+    name: device.name || 'Printer Bluetooth',
+  };
+  saveBluetoothPrinter(info);
+  return info;
+}
+
+/**
+ * Returns a previously permitted device WITHOUT showing the chooser.
+ * Throws `PRINTER_RECONNECT_NEEDED` (saved but not reachable) or
+ * `PRINTER_NOT_PAIRED` (nothing saved). The UI relies on these exact messages.
+ */
+export async function getBluetoothDeviceWithoutDiscovery(): Promise<BleDevice> {
+  if (activeDevice) return activeDevice;
+
+  const saved = getSavedBluetoothPrinter();
+  const api = getBluetoothApi();
+
+  if (saved && api?.getDevices) {
+    try {
+      const devices = await api.getDevices();
+      const match = devices.find((d) => d.id === saved.id) ?? devices[0];
+      if (match) {
+        activeDevice = match;
+        return match;
+      }
+    } catch {
+      // getDevices() not permitted -> fall through.
     }
   }
-  return window.btoa(binary);
+
+  throw new Error(saved ? 'PRINTER_RECONNECT_NEEDED' : 'PRINTER_NOT_PAIRED');
+}
+
+const isWritable = (c: BleCharacteristic): boolean =>
+  c.properties.write || c.properties.writeWithoutResponse;
+
+/** Finds the first writable characteristic: known printer services first, then any service. */
+async function findWritableCharacteristic(server: BleGattServer): Promise<BleCharacteristic | null> {
+  for (const uuid of PRINTER_SERVICES) {
+    try {
+      const service = await server.getPrimaryService(uuid);
+      const found = (await service.getCharacteristics()).find(isWritable);
+      if (found) return found;
+    } catch {
+      // Service not present on this printer.
+    }
+  }
+
+  try {
+    for (const service of await server.getPrimaryServices()) {
+      const found = (await service.getCharacteristics()).find(isWritable);
+      if (found) return found;
+    }
+  } catch {
+    // Enumeration not permitted.
+  }
+  return null;
+}
+
+/** Picks the most reliable write primitive the characteristic supports. */
+function createWriter(c: BleCharacteristic): (chunk: Uint8Array) => Promise<void> {
+  if (c.properties.write && c.writeValueWithResponse) {
+    return (chunk) => c.writeValueWithResponse!(chunk); // ACK = natural flow control
+  }
+  if (c.properties.writeWithoutResponse && c.writeValueWithoutResponse) {
+    return (chunk) => c.writeValueWithoutResponse!(chunk);
+  }
+  return (chunk) => c.writeValue(chunk);
 }
 
 /**
- * Print receipt directly via Web Bluetooth (BLE).
- * Does NOT invoke discovery scan if a printer is already saved and accessible.
+ * Streams bytes in 200-byte chunks with a short pause between writes so cheap
+ * printer buffers never overflow. If the link rejects 200-byte packets (small
+ * MTU), the SAME offset is retried at 20 bytes - no byte is ever skipped.
+ */
+async function streamToCharacteristic(c: BleCharacteristic, data: Uint8Array): Promise<void> {
+  const write = createWriter(c);
+  let chunkSize = BLE_CHUNK_SIZE;
+  let offset = 0;
+
+  while (offset < data.length) {
+    const chunk = data.subarray(offset, offset + chunkSize);
+    try {
+      await write(chunk);
+    } catch (err) {
+      if (chunkSize > BLE_FALLBACK_CHUNK_SIZE) {
+        chunkSize = BLE_FALLBACK_CHUNK_SIZE;
+        continue;
+      }
+      throw toError(err, 'Pengiriman data ke printer gagal.');
+    }
+    offset += chunk.length;
+    await sleep(BLE_CHUNK_DELAY_MS);
+  }
+}
+
+/**
+ * LANE 4: Prints via Web Bluetooth (BLE). Never opens the chooser - call
+ * `pairBluetoothPrinter()` first if `PRINTER_NOT_PAIRED` / `PRINTER_RECONNECT_NEEDED` is thrown.
  */
 export async function printReceiptViaBluetooth(
   receiptElement: HTMLElement,
   options: BluetoothPrintOptions
 ): Promise<void> {
   const { paperWidthMm, onStatusChange } = options;
+  requireBluetoothApi();
 
-  if (!isBluetoothSupported()) {
-    throw new Error(
-      'Web Bluetooth tidak didukung pada browser/perangkat ini. Silakan gunakan opsi "Print Sistem" atau "Android Classic Bridge".'
-    );
-  }
-
-  // 1. Retrieve device reference without discovery scan
-  let device: any;
-  try {
-    device = await getBluetoothDeviceWithoutDiscovery();
-  } catch (err: any) {
-    if (err.message === 'PRINTER_RECONNECT_NEEDED' || err.message === 'PRINTER_NOT_PAIRED') {
-      throw err;
-    }
-    throw new Error('Printer tidak tersedia.');
-  }
+  const device = await getBluetoothDeviceWithoutDiscovery();
+  if (!device.gatt) throw new Error('Printer tidak memiliki antarmuka GATT.');
 
   onStatusChange?.('Menghubungkan ke printer...');
-
-  let server: any;
+  let server: BleGattServer;
   try {
     server = device.gatt.connected ? device.gatt : await device.gatt.connect();
   } catch {
-    cachedBluetoothDevice = null;
+    activeDevice = null;
     throw new Error('Printer tidak dapat dihubungkan.');
   }
 
-  // 2. Discover writeable characteristic
-  let writeCharacteristic: any = null;
-  for (const serviceUuid of PRINTER_SERVICES) {
-    try {
-      const service = await server.getPrimaryService(serviceUuid);
-      const characteristics = await service.getCharacteristics();
-      for (const char of characteristics) {
-        if (char.properties.write || char.properties.writeWithoutResponse) {
-          writeCharacteristic = char;
-          break;
-        }
-      }
-      if (writeCharacteristic) break;
-    } catch {
-      // Continue to next candidate service
-    }
-  }
-
-  if (!writeCharacteristic) {
-    try {
-      const services = await server.getPrimaryServices();
-      for (const s of services) {
-        const chars = await s.getCharacteristics();
-        for (const c of chars) {
-          if (c.properties.write || c.properties.writeWithoutResponse) {
-            writeCharacteristic = c;
-            break;
-          }
-        }
-        if (writeCharacteristic) break;
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  if (!writeCharacteristic) {
+  const characteristic = await findWritableCharacteristic(server);
+  if (!characteristic) {
     throw new Error(
-      'Tidak ditemukan karakteristik tulis pada printer ini (printer mungkin membutuhkan koneksi Bluetooth Classic/SPP). Silakan gunakan opsi "Android Classic Bridge" atau "Print Sistem".'
+      'Printer ini tidak menyediakan karakteristik tulis BLE (kemungkinan Bluetooth Classic/SPP). Gunakan "Bluetooth (RawBT)" atau "Sistem Bawaan".'
     );
   }
 
   onStatusChange?.('Merender nota untuk printer thermal...');
-
-  const escPosData = await renderReceiptToEscPosRaster(receiptElement, paperWidthMm);
+  const job = await renderReceiptToEscPosRaster(receiptElement, paperWidthMm);
 
   onStatusChange?.('Mengirim data nota ke printer...');
-
-  // Transmit in MTU-safe chunks.
-  // Previously 256-byte packets were sent with writeWithoutResponse. Most cheap BLE printers
-  // negotiate ATT MTU 23 (20-byte payload); oversize no-response writes are silently truncated
-  // and there is no flow control, so the printer buffer overflows -> lost bytes -> raster desync.
-  const supportsWithResponse =
-    !!writeCharacteristic.properties?.write &&
-    typeof writeCharacteristic.writeValueWithResponse === 'function';
-  const supportsWithoutResponse =
-    typeof writeCharacteristic.writeValueWithoutResponse === 'function';
-
-  const writeChunk = async (chunk: Uint8Array) => {
-    if (supportsWithResponse) {
-      await writeCharacteristic.writeValueWithResponse(chunk); // ACK = natural flow control
-    } else if (supportsWithoutResponse) {
-      await writeCharacteristic.writeValueWithoutResponse(chunk);
-    } else {
-      await writeCharacteristic.writeValue(chunk);
-    }
-  };
-
-  // With-response writes: try a larger packet first, fall back to 20 bytes if rejected.
-  let chunkSize = supportsWithResponse ? 180 : 20;
-  const interChunkDelayMs = supportsWithResponse ? 0 : 8;
-  let offset = 0;
-  while (offset < escPosData.length) {
-    const chunk = escPosData.slice(offset, offset + chunkSize);
-    try {
-      await writeChunk(chunk);
-    } catch (err) {
-      if (chunkSize > 20) {
-        chunkSize = 20; // retry the SAME offset with a smaller packet, no bytes skipped
-        continue;
-      }
-      throw err;
-    }
-    offset += chunk.length;
-    if (interChunkDelayMs > 0) {
-      await new Promise((res) => setTimeout(res, interChunkDelayMs));
-    }
-  }
+  await streamToCharacteristic(characteristic, job);
 
   onStatusChange?.('Pencetakan selesai!');
-}
-
-/**
- * Print receipt via Android RawBT Intent Protocol.
- * For Bluetooth Classic / SPP and USB thermal printers on Android.
- */
-export async function printReceiptViaRawBt(
-  receiptElement: HTMLElement,
-  paperWidthMm: number,
-  onStatusChange?: (status: string) => void
-): Promise<void> {
-  onStatusChange?.('Merender nota untuk printer thermal...');
-
-  const escPosData = await renderReceiptToEscPosRaster(receiptElement, paperWidthMm);
-  const base64Data = uint8ArrayToBase64(escPosData);
-
-  onStatusChange?.('Meneruskan nota ke printer Android...');
-
-  // RawBT Android Intent URL.
-  // Base64 alphabet (A-Z a-z 0-9 + / =) is already URI-safe and android.net.Uri does NOT
-  // turn '+' into a space. Percent-encoding it ('%2B', '%2F', '%3D') made RawBT's lenient
-  // base64 decoder read '%','2','B' as data -> extra/shifted bits -> skewed, striped image
-  // and garbage text. Send raw base64 (same as the official RawBT JS example).
-  const intentUrl = `intent:base64,${base64Data}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
-
-  // Trigger Intent via anchor click with window.location fallback
-  try {
-    const anchor = document.createElement('a');
-    anchor.href = intentUrl;
-    anchor.style.display = 'none';
-    document.body.appendChild(anchor);
-    anchor.click();
-    setTimeout(() => {
-      if (anchor.parentNode) {
-        anchor.parentNode.removeChild(anchor);
-      }
-    }, 1000);
-  } catch {
-    window.location.href = intentUrl;
-  }
-
-  onStatusChange?.('Nota berhasil diteruskan ke Android!');
 }

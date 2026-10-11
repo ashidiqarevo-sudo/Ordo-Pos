@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ServiceItem, StoreSettings } from '../../types';
 import { ReceiptBody } from '../ReceiptBody';
-import { printReceiptViaIframe } from '../../utils/receiptPrint';
 import {
   isBluetoothSupported,
   isAndroidDevice,
   printReceiptViaBluetooth,
   printReceiptViaRawBt,
+  printReceiptViaSystem,
   getSavedBluetoothPrinter,
   pairBluetoothPrinter,
   SavedBluetoothPrinter,
@@ -212,7 +212,7 @@ export const ReceiptPrintPreview: React.FC<ReceiptPrintPreviewProps> = ({
       } else {
         // Method C: System Print (via isolated iframe with zero margins)
         setStatusMessage('Membuka dialog pencetakan...');
-        await printReceiptViaIframe(receiptRef.current, {
+        await printReceiptViaSystem(receiptRef.current, {
           paperWidthMm: activeWidthMm,
           onComplete: () => {
             setIsPrinting(false);
