@@ -507,8 +507,6 @@ function launchUrl(url: string): void {
 /* LANE 3 - System Print (PC / browser print dialog)                          */
 /* ========================================================================== */
 
-const PX_TO_MM = 25.4 / 96;
-
 function buildPrintDocument(receiptHtml: string, paperWidthMm: number): string {
   const inheritedStyles = Array.from(
     document.querySelectorAll<HTMLElement>('style, link[rel="stylesheet"]')
@@ -526,19 +524,22 @@ function buildPrintDocument(receiptHtml: string, paperWidthMm: number): string {
   <title>Nota</title>
   ${inheritedStyles}
   <style>
-    @page { size: ${paperWidthMm}mm auto; margin: 0; }
+    @page {
+      size: ${paperWidthMm}mm auto;
+      margin: 0;
+    }
     *, *::before, *::after {
       box-sizing: border-box !important;
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
     }
     html, body {
-      margin: 0 !important;
-      padding: 0 !important;
       width: ${paperWidthMm}mm !important;
       min-width: ${paperWidthMm}mm !important;
       max-width: ${paperWidthMm}mm !important;
-      background: #FFFFFF !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      background: white !important;
       color: #000000 !important;
       overflow: visible !important;
     }
@@ -548,12 +549,19 @@ function buildPrintDocument(receiptHtml: string, paperWidthMm: number): string {
       line-height: 1.25 !important;
     }
     #ordo-print-root {
-      width: ${paperWidthMm}mm !important;
-      max-width: ${paperWidthMm}mm !important;
+      width: 100% !important;
+      min-width: 100% !important;
+      max-width: 100% !important;
       margin: 0 !important;
       padding: ${padding} !important;
-      background: #FFFFFF !important;
+      background: white !important;
       color: #000000 !important;
+      box-sizing: border-box !important;
+    }
+    #ordo-print-root > * {
+      width: 100% !important;
+      max-width: 100% !important;
+      box-sizing: border-box !important;
     }
     img { max-width: 100% !important; height: auto !important; }
   </style>
@@ -610,15 +618,6 @@ export function printReceiptViaSystem(
 
           await waitForFonts(doc);
           await waitForImages(doc);
-
-          // Exact page height = content height, so thermal printers don't feed a blank page.
-          const root = doc.getElementById('ordo-print-root');
-          if (root) {
-            const heightMm = Math.ceil(root.scrollHeight * PX_TO_MM) + 4;
-            const pageStyle = doc.createElement('style');
-            pageStyle.textContent = `@page { size: ${paperWidthMm}mm ${heightMm}mm; margin: 0; }`;
-            doc.head.appendChild(pageStyle);
-          }
 
           const cleanup = () => setTimeout(() => iframe.remove(), 500);
           win.addEventListener('afterprint', cleanup, { once: true });
